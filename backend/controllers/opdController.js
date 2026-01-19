@@ -16,6 +16,11 @@ const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
 
 const SENDER_EMAIL = process.env.EMAIL_FROM;
 
+
+// 👇 PASTE YOUR TELEGRAM DETAILS HERE 👇
+const TELEGRAM_BOT_TOKEN =process.env.TELEGRAM_BOT_TOKEN; 
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
 // ================= HELPERS =================
 
 const cleanPhoneNumber = (raw) => {
@@ -75,37 +80,45 @@ const formatTime = (minutes) => {
 };
 
 
-// --- SMS SENDER HELPER (FIXED) ---
-const sendSms = async (number, text) => {
-  if (!number) return;
-  try {
-    console.log(`Attempting SMS to ${number}...`);
-    
-    // Using POST is more reliable than GET for APIs
-    const response = await axios.post("https://www.fast2sms.com/dev/bulkV2", {
-      "route": "q", // "q" = Quick Route (Transactional/Promotional)
-      "message": text,
-      "language": "english",
-      "flash": 0,
-      "numbers": number,
-    }, {
-      headers: {
-        "authorization": FAST2SMS_API_KEY,
-        "Content-Type": "application/json"
-      }
-    });
 
-    console.log("✅ SMS Sent:", response.data);
+// --- TELEGRAM SENDER (FIXED ECONNRESET) ---
+const sendTelegram = async (text) => {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.warn("⚠️ Telegram credentials missing in .env. Skipping alert.");
+    return;
+  }
+
+  try {
+    console.log("📨 Sending Telegram Alert...");
+    
+    // Create an HTTPS Agent to keep the connection alive (Prevents ECONNRESET)
+    const agent = new https.Agent({ keepAlive: true });
+
+    await axios.post(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, 
+      {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: text,
+        // parse_mode: "Markdown" // Removed temporarily to avoid parsing errors with special chars
+      },
+      {
+        timeout: 10000, // 10 second timeout
+        httpsAgent: agent
+      }
+    );
+    console.log("✅ Telegram Sent Successfully!");
   } catch (error) {
-    console.error("❌ SMS Failed:");
-    if (error.response) {
-      // THIS LOG will tell you exactly why 400 happened
-      console.error("Fast2SMS Response:", error.response.data); 
+    if (error.code === 'ECONNRESET') {
+        console.error("❌ Telegram Network Error: Connection Reset. Check internet/VPN.");
+    } else if (error.response) {
+        console.error("❌ Telegram API Error:", error.response.data);
     } else {
-      console.error("Error:", error.message);
+        console.error("❌ Telegram Failed:", error.message);
     }
   }
 };
+
+
 // ================= CONTROLLERS =================
 
 // ... existing imports
@@ -228,18 +241,18 @@ exports.bookOpd = async (req, res) => {
     await newOpdEntry.save();
     await Admin.findByIdAndUpdate(hospitalId, { $push: { opdForms: newOpdEntry._id } });
 
+    
+
     // --- 7. SEND NOTIFICATIONS (EMAIL & SMS) ---
     
-    // Construct Message
-    const messageText = `Dear ${cleanName},
-
-Your appointment is confirmed!
-
-📅 Date: ${localDate}
-⏰ Time: ${appointmentTimeStr}
-🪪 Token No: ${counter.seq}
-
-Thank you for choosing us.`;
+   const messageText = `
+🏥 *New Appointment Confirmed!*
+👤 *Patient:* ${cleanName}
+📅 *Date:* ${localDate}
+⏰ *Time:* ${appointmentTimeStr}
+🪪 *Token:* ${counter.seq}
+📞 *Contact:* ${validContactNumber || "N/A"}
+    `;
 
     // A. Send Email (Brevo)
     if (email) {
@@ -255,7 +268,8 @@ Thank you for choosing us.`;
     }
 
     if (validContactNumber) {
-      await sendSms(validContactNumber, messageText);
+      // B. Telegram Alert
+      await sendTelegram(messageText);
     }
 
     // --- 8. SEND RESPONSE ---
