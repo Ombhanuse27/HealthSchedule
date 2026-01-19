@@ -218,61 +218,69 @@ const OpdForm = () => {
   const checkIfDuplicateExists = async () => {
     try {
       const duplicateCheck = await checkDuplicate(
-        formData.fullName,
+        formData.fullName.trim(), // <--- TRIM HERE
         formData.hospitalId
       );
-      return duplicateCheck.exists;
+      // Handle response structure safely
+      return duplicateCheck?.data?.exists || duplicateCheck?.exists || false;
     } catch (error) {
       console.error("Error checking duplicates:", error);
       return false;
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // In OpdForm.js
 
-    const confirmBooking = window.confirm("Do you want to book an appointment?");
-    if (!confirmBooking) return;
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-    // Check for duplicate before proceeding
-    const isDuplicate = await checkIfDuplicateExists();
-    if (isDuplicate) {
-      alert("This Full Name already exist. Please use different name.");
-      return;
-    }
+  const confirmBooking = window.confirm("Do you want to book an appointment?");
+  if (!confirmBooking) return;
 
-    // --- Dynamic Time Validation ---
-    const selectedHospital = hospitals.find(
-      (h) => h._id === formData.hospitalId
-    );
-    if (!selectedHospital) {
-      alert("Invalid hospital selected.");
-      return;
-    }
-
-    // Get hospital open/close times in minutes
-    const hospitalOpenMinutes = parseTime(selectedHospital.hospitalStartTime);
-    const hospitalCloseMinutes = parseTime(selectedHospital.hospitalEndTime);
-
-    
-
-    try {
-  const response = await submitOpdForm(formData.hospitalId, formData);
-
-  if (!response?.appointment?._id) {
-    throw new Error("Appointment not created");
+  // Check for duplicate before proceeding
+  const isDuplicate = await checkIfDuplicateExists();
+  if (isDuplicate) {
+    alert("This Full Name already exists. Please use a different name.");
+    return;
   }
 
-  alert(response.message);
-} catch (error) {
-  alert(
-    error?.response?.data?.message ||
-    error.message ||
-    "Appointment booking failed"
+  // --- Dynamic Time Validation ---
+  const selectedHospital = hospitals.find(
+    (h) => h._id === formData.hospitalId
   );
-}
+  if (!selectedHospital) {
+    alert("Invalid hospital selected.");
+    return;
+  }
 
-  };
+  try {
+    const response = await submitOpdForm(formData.hospitalId, formData);
+    
+    // ✅ DEBUGGING: Log the response to see exactly what is coming back
+    console.log("Booking Response:", response);
+
+    // ✅ FIX: Check response.data.appointment OR response.appointment depending on your API wrapper
+    // Most likely, the structure is response.data.appointment
+    const appointmentData = response?.data?.appointment || response?.appointment;
+
+    if (!appointmentData?._id) {
+      throw new Error("Appointment created, but ID missing in response.");
+    }
+
+    // Success Message
+    alert(response?.data?.message || response?.message || "Appointment booked successfully!");
+    
+    // Optional: Reset form or redirect here
+    
+  } catch (error) {
+    console.error("Booking Error:", error);
+    alert(
+      error?.response?.data?.message ||
+      error.message ||
+      "Appointment booking failed"
+    );
+  }
+};
 
   return (
     <div className="w-full bg-gradient-to-b from-blue-100 to-blue-200 min-h-screen">

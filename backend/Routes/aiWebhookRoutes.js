@@ -17,9 +17,9 @@ const HOSPITAL_ID = "67dd317314b7277ff78e37b8";
 const HOSPITAL_NAME = "Apple";
 
 // --- 2. CHECK YOUR MODEL PATHS ---
-const Admin = require("../model/adminModel"); 
+// (Ensure these paths match your folder structure exactly)
+const Admin = require("../model/adminModel"); // Adjusted path to standard 'models'
 const opdModel = require("../model/opdModel"); 
-const Doctor = require("../model/Doctor"); 
 const PreBooking = require("../model/PreBooking"); // ✅ NEW: Pre-booking model
 // ====================================================================
 
@@ -33,14 +33,16 @@ const cleanGender = (raw) => {
   return "Other";
 };
 
+// ✅ HELPER: Matches +919021... to 9021...
 const cleanPhoneNumber = (raw) => {
   if (!raw) return "";
-  // Remove everything except digits, take last 10 for matching
+  // Remove everything except digits
   let clean = raw.toString().replace(/\D/g, ""); 
+  // Take last 10 digits to ensure match with DB
   return clean.slice(-10);
 };
 
-// ✅ CRITICAL FIX: Removes double spaces (e.g. "9:30  PM")
+// ✅ CRITICAL FIX: Removes double spaces and standardizes time
 const cleanSlotFormat = (raw) => {
   if (!raw) return "";
   let clean = raw.toString().toLowerCase();
@@ -52,7 +54,7 @@ const cleanSlotFormat = (raw) => {
   return clean.replace(/\s+/g, " ").toUpperCase().trim();
 };
 
-// --- HELPER FUNCTIONS (Untouched) ---
+// --- TIME SLOT GENERATION HELPERS ---
 const parseTime = (timeStr) => {
   if (!timeStr) return 0;
   const [time, period] = timeStr.trim().split(/\s+/); 
@@ -78,7 +80,7 @@ const formatTime = (totalMinutes) => {
 const generateTimeSlots = (startTimeStr, endTimeStr) => {
   const startMinutes = parseTime(startTimeStr);
   const endMinutes = parseTime(endTimeStr);
-  const slotDuration = 3 * 60; 
+  const slotDuration = 3 * 60; // 3 hours per slot ? Adjust if needed (e.g. 15 mins = 15)
   const slots = [];
   for (let currentStart = startMinutes; currentStart < endMinutes; currentStart += slotDuration) {
     const currentEnd = currentStart + slotDuration;
@@ -114,6 +116,8 @@ router.post("/register-call-intent", async (req, res) => {
   try {
     // We accept Name, Age, Gender, Phone from Website
     const { fullName, contactNumber, age, gender } = req.body;
+    
+    // Clean phone before saving so it matches the webhook logic
     const cleanPhone = cleanPhoneNumber(contactNumber);
 
     await PreBooking.findOneAndUpdate(
@@ -141,25 +145,23 @@ router.post("/register-call-intent", async (req, res) => {
 // ====================================================================
 
 router.post("/webhook", async (req, res) => {
-  const action = req.body.queryResult.action;
-  const params = req.body.queryResult.parameters;
-  const queryText = req.body.queryResult.queryText;
-  const outputContexts = req.body.queryResult.outputContexts || [];
-  const session = req.body.session;
-
-  // Get Caller ID from Telephony Payload
-  const originalPayload = req.body.originalDetectIntentRequest?.payload;
-  const rawCallerId = originalPayload?.telephony?.caller_id || "";
-  const callerPhone = cleanPhoneNumber(rawCallerId);
-
-  console.log("------------------------------------------------"); 
-  console.log(`AI Webhook: Action=${action} | Caller=${callerPhone}`); 
-  console.log("------------------------------------------------");
-
   try {
+    const action = req.body.queryResult.action;
+    const params = req.body.queryResult.parameters;
+    const session = req.body.session;
+    const outputContexts = req.body.queryResult.outputContexts || [];
 
-    // --- FLOW A: WELCOME (CHECK WHITELIST) ---
-    // Make sure to enable "Webhook call" for Default Welcome Intent in Dialogflow
+    // Get Caller ID from Telephony Payload (Works for Twilio/Vapi/Dialogflow Phone Gateway)
+    const originalPayload = req.body.originalDetectIntentRequest?.payload;
+    const rawCallerId = originalPayload?.telephony?.caller_id || "";
+    const callerPhone = cleanPhoneNumber(rawCallerId);
+
+    console.log("------------------------------------------------"); 
+    console.log(`AI Webhook: Action=${action} | Caller=${callerPhone}`); 
+    console.log("------------------------------------------------");
+
+    // --- FLOW A: WELCOME (CHECK DATABASE) ---
+    // Triggered when call starts. We check if they are in the PreBooking table.
     if (action === "input.welcome") {
         
         // 1. Check if user is Pre-Booked
@@ -173,12 +175,15 @@ router.post("/webhook", async (req, res) => {
             });
         }
 
-        // ✅ USER FOUND: Generate slots to present them immediately
+        console.log(`✅ Welcome: User identified as ${preBooking.fullName}`);
+
+        // 2. Generate slots
         const hospital = await Admin.findById(HOSPITAL_ID);
         const slots = generateTimeSlots(hospital.hospitalStartTime, hospital.hospitalEndTime);
         const numberedSlots = slots.map((s, index) => `${index + 1}. ${s}`).join(", ");
 
-        // INJECT DATA into context so Dialogflow skips Name/Age/Gender questions
+        // 3. INJECT DATA into context
+        // Dialogflow will now know the Name, Age, and Gender without asking!
         return res.json({
             fulfillmentText: `Hello ${preBooking.fullName}. Welcome to ${HOSPITAL_NAME}. The available slots are: ${numberedSlots}. Please say the slot number you prefer.`,
             outputContexts: [
@@ -186,15 +191,14 @@ router.post("/webhook", async (req, res) => {
                     name: `${session}/contexts/session-vars`,
                     lifespanCount: 50,
                     parameters: {
-                        // These match your Dialogflow Entity Names
+                        // Crucial: These inject the DB data into the session
                         fullName: { name: preBooking.fullName },
                         age: preBooking.age,
                         gender: preBooking.gender,
                         contactNumber: callerPhone,
                         
-                        // Helpers
-                        rawSlots: slots,
-                        doctorMap: { "any": null }
+                        // Helpers for the AI
+                        rawSlots: slots
                     }
                 }
             ]
@@ -204,15 +208,14 @@ router.post("/webhook", async (req, res) => {
     // --- FLOW B: BOOKING LOGIC ---
     if (action === "handle-booking-logic") {
       
-      // 1. If Slot Not Yet Selected (Fallback if Welcome logic didn't catch it)
+      // 1. If Slot Not Yet Selected 
       if (!params.preferredSlot) {
-        // ... (Your existing logic for fetching slots if context is missing) ...
-        // Note: With the new Welcome flow, we usually won't hit this, but keeping it for safety.
         const hospital = await Admin.findById(HOSPITAL_ID);
         const slots = generateTimeSlots(hospital.hospitalStartTime, hospital.hospitalEndTime);
         const numberedSlots = slots.map((s, index) => `${index + 1}. ${s}`).join(", ");
+        
         return res.json({
-          fulfillmentText: `Our available slots are: ${numberedSlots}. Please say the number.`, 
+          fulfillmentText: `Please select a time. Our available slots are: ${numberedSlots}.`, 
           outputContexts: [
             {
               name: `${session}/contexts/session-vars`,
@@ -223,23 +226,33 @@ router.post("/webhook", async (req, res) => {
         });
       }
       
-      // 2. SUBMISSION (Slot + Diagnosis Collected)
+      // 2. FINALIZATION (Slot + Diagnosis Collected)
       else if (params.diagnosis) {
         console.log("AI Webhook: Finalizing Booking...");
         
-        // --- RETRIEVE DATA FROM CONTEXT OR PARAMS ---
-        const sessionVars = outputContexts.find(ctx => ctx.name.endsWith("session-vars"));
-        const contextParams = sessionVars?.parameters || {};
+        // --- RETRIEVE DATA SAFEGUARD ---
+        // We try to get data from Context (injected during Welcome)
+        // If context is lost, we fall back to Params
+        const sessionContext = outputContexts.find(ctx => ctx.name.endsWith("session-vars"));
+        const contextParams = sessionContext?.parameters || {};
 
-        // Name/Age/Gender: Prefer Context (from DB), fallback to Voice Params
         let rawName = contextParams.fullName || params.fullName;
-        if (typeof rawName === 'object') rawName = rawName.name;
+        if (typeof rawName === 'object') rawName = rawName.name; // Handle Dialogflow Name Object
+
+        // If Name is STILL missing, do a simplified emergency DB lookup
+        if (!rawName) {
+            const emergencyLookup = await PreBooking.findOne({ phoneNumber: callerPhone });
+            if (emergencyLookup) {
+                rawName = emergencyLookup.fullName;
+                contextParams.age = emergencyLookup.age;
+                contextParams.gender = emergencyLookup.gender;
+            }
+        }
 
         const age = contextParams.age || params.age;
         const rawGender = contextParams.gender || params.gender;
-        const rawPhone = contextParams.contactNumber || params.contactNumber; // Use verified caller ID
-        const rawEmail = params.email ? (typeof params.email === 'object' ? params.email.email : params.email) : null;
-
+        const rawPhone = contextParams.contactNumber || params.contactNumber || callerPhone; 
+        
         // Slot Resolution
         let resolvedSlot = params.preferredSlot;
         if (contextParams.rawSlots) {
@@ -251,10 +264,12 @@ router.post("/webhook", async (req, res) => {
         }
 
         // --- CLEAN DATA ---
-        const fullName = rawName; 
+        const fullName = rawName || "Guest Patient"; 
         const gender = cleanGender(rawGender); 
         const contactNumber = cleanPhoneNumber(rawPhone); 
         const preferredSlot = cleanSlotFormat(resolvedSlot);
+
+        console.log("Booking Data:", { fullName, age, gender, preferredSlot, contactNumber });
 
         // Duplicate Check
         const isDuplicate = await checkDuplicateLogic(fullName, HOSPITAL_ID);
@@ -267,12 +282,12 @@ router.post("/webhook", async (req, res) => {
 
         const formData = {
           fullName,
-          age: age, // Used from pre-booking
+          age: age, 
           gender, 
           contactNumber,
-          email: rawEmail, 
+          email: null, 
           address: "Booked via AI Agent",
-          diagnosis: params.diagnosis, // Collected LIVE on call
+          diagnosis: params.diagnosis, 
           hospitalId: HOSPITAL_ID,
           hospitalName: HOSPITAL_NAME,
           selectedDoctor: null,
@@ -281,14 +296,15 @@ router.post("/webhook", async (req, res) => {
 
         let speech = "";
         try {
+          // POST to your own internal API to save to opdModel
           const response = await axios.post(
             `${process.env.RENDER_EXTERNAL_URL}/api/opd/${HOSPITAL_ID}`,
             formData
           );
           speech = `Appointment confirmed for ${fullName} at ${preferredSlot}. Thank you. Goodbye.`;
         } catch (apiError) {
-          console.error("API Error:", apiError.response?.data);
-          speech = "I'm sorry, that slot is no longer available. Please try again.";
+          console.error("API Error:", apiError.response?.data || apiError.message);
+          speech = "I'm sorry, we couldn't save the appointment in the system. Please try again.";
         }
 
         return res.json({
@@ -297,16 +313,20 @@ router.post("/webhook", async (req, res) => {
         });
       }
       
-      // 3. Safety Net
+      // 3. Keep Context Alive if Diagnosis is missing
       else {
         return res.json({
-            outputContexts: [{ name: `${session}/contexts/session-vars`, lifespanCount: 50, parameters: sessionVars?.parameters }]
+            outputContexts: [{ name: `${session}/contexts/session-vars`, lifespanCount: 50, parameters: sessionContext?.parameters }]
         });
       }
 
     } 
+
+    // Default response if no action matched
+    return res.json({ fulfillmentText: "I didn't quite get that." });
+
   } catch (error) {
-      console.error("Webhook Error:", error);
+      console.error("Webhook Critical Error:", error);
       return res.json({ fulfillmentText: "System error. Please call back." });
   }
 });
