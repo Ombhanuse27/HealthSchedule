@@ -72,3 +72,173 @@
 .hospital-card1:hover #hospital-card-img1 {
     border-bottom: 3px solid #28a745; 
 }
+
+
+
+/* Container: Uses inline-block to allow horizontal stacking (Side-by-Side) */
+.hospital-container1 {
+  display: inline-block;    /* Allows cards to sit next to each other */
+  vertical-align: top;      /* Aligns them at the top */
+  width: 100%;              /* Full width on mobile */
+  max-width: 340px;         /* Fixed width on desktop to form a grid */
+  margin: 15px;             /* Spacing around each card */
+  box-sizing: border-box;
+}
+
+/* Link Wrapper */
+.hospital-card-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  height: 100%;             /* Ensures cards in same row are same height */
+}
+
+/* Card Design */
+.hospital-card1 {
+  background: #ffffff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;             /* Fills the container height */
+  min-height: 420px;        /* Ensures uniformity */
+}
+
+/* Hover Effect */
+.hospital-card1:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* Image Wrapper */
+.card-image-wrapper {
+  position: relative;
+  height: 200px;
+  width: 100%;
+  overflow: hidden;
+}
+
+#hospital-card-img1 {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.hospital-card1:hover #hospital-card-img1 {
+  transform: scale(1.05);
+}
+
+/* Speciality Badge */
+.speciality-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #3498DB;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Info Section */
+.hospital-info1 {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;             /* Pushes footer to bottom */
+  gap: 12px;
+}
+
+/* Title */
+#hospital_name1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #2c3e50;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+/* Info Body */
+.info-body p {
+  margin: 8px 0;
+  font-size: 0.9rem;
+  color: #555;
+  display: flex;
+  align-items: flex-start; /* Aligns icon with top of text */
+  gap: 10px;
+  line-height: 1.5;
+}
+
+/* Icons */
+.card-icon {
+  margin-top: 3px;
+  width: 16px;
+  flex-shrink: 0; /* Prevents icon from squishing */
+}
+.loc-icon { color: #E63946; }
+.phone-icon { color: #2ECC71; }
+.time-icon { color: #34495E; }
+
+/* Footer */
+.card-footer {
+  margin-top: auto; /* Pushes to very bottom */
+  padding-top: 15px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Rating */
+.rating-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff9db;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.stars {
+  color: #F1C40F;
+  font-size: 0.8rem;
+}
+
+.rating-value {
+  font-weight: 700;
+  color: #d4ac0d;
+  font-size: 0.9rem;
+}
+
+.view-btn {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #3498DB;
+}
+
+/* Responsive: Mobile Stack */
+@media (max-width: 600px) {
+  .hospital-container1 {
+    display: block;  /* Stacks vertically on small screens */
+    width: 100%;
+    max-width: 100%;
+    margin: 0 0 20px 0; /* Removes side margin, adds bottom margin */
+    padding: 0 10px;
+  }
+  
+  .card-image-wrapper {
+    height: 180px;
+  }
+}

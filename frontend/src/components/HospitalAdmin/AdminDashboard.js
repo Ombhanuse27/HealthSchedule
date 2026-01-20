@@ -332,21 +332,34 @@ setOpdRecords(populated);
                 <span className="text-sm font-medium text-slate-600 dark:text-slate-300">System Live</span>
               </div>
             </div>
-            <div className="flex gap-3">
-  <button
-    onClick={() => applyDelay(5)}
-    className="px-4 py-2 bg-amber-500 text-white rounded-lg"
-  >
-    Delay +5 min
-  </button>
+{/* 🔥 UPDATED: Only show Delay buttons if viewing TODAY */}
+            {selectedDate === todayStr && (
+              <div className="flex gap-3 mb-6 bg-amber-50 p-4 rounded-xl border border-amber-100 items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Clock className="text-amber-600 animate-pulse" size={20} />
+                  <div>
+                    <h3 className="font-bold text-amber-800">Running Late?</h3>
+                    <p className="text-xs text-amber-600">Apply a time delay to all upcoming appointments for <strong>TODAY</strong>.</p>
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => applyDelay(5)}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg shadow-sm transition-all active:scale-95 flex items-center gap-2"
+                  >
+                    +5 Min
+                  </button>
 
-  <button
-    onClick={() => applyDelay(10)}
-    className="px-4 py-2 bg-red-500 text-white rounded-lg"
-  >
-    Delay +10 min
-  </button>
-</div>
+                  <button
+                    onClick={() => applyDelay(10)}
+                    className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg shadow-sm transition-all active:scale-95 flex items-center gap-2"
+                  >
+                    +10 Min
+                  </button>
+                </div>
+              </div>
+            )}
 
 
             {/* 🎨 UI UPDATE: Glassmorphism Control Bar */}

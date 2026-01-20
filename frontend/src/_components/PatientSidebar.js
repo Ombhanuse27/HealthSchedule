@@ -171,7 +171,7 @@ export const LogoIcon = () => {
     >
        <SidebarLink
               link={{
-                label: "Radhey Patil",
+                label: "Health Schedule",
                 href: "#",
                 icon: (
                   <img

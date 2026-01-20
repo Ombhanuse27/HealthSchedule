@@ -110,7 +110,7 @@ export function HospitalSidebar() {
           <div className="mt-auto">
             <SidebarLink
               link={{
-                label: "Radhey Patil",
+                label: "Health Schedule",
                 href: "#",
                 icon: (
                   <img
