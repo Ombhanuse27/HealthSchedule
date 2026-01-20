@@ -17,62 +17,72 @@ const HospitalCard = ({
   hospital_location, 
   hospital_phone_number, 
   hospital_speciality, 
+  hospital_timing,
   id 
 }) => {
  
-  // 🔒 VALIDATION: Only show card if ALL fields are present
+  // 🔒 Validation
   if (!hospital_img || !hospital_name || !hospital_location || !hospital_phone_number || !hospital_speciality || !id) {
     return null;
   }
 
   return (
-    <div className="hospital-container1">
+    <div className="hospital-container-item">
       <Link to={`/hospital/${id}`} className="hospital-card-link">
-        <div className='hospital-card1'>
+        <div className='hospital-card-box'>
           
           {/* Image Section */}
           <div className="card-image-wrapper">
-            <img id='hospital-card-img1' src={hospital_img} alt={hospital_name} />
-            <span className="speciality-badge">
-              <FontAwesomeIcon icon={faStethoscope} /> {hospital_speciality}
-            </span>
+            <img className='hospital-card-img' src={hospital_img} alt={hospital_name} />
+            <div className="speciality-badge">
+              <FontAwesomeIcon icon={faStethoscope} className="badge-icon" /> 
+              <span className="badge-text">{hospital_speciality}</span>
+            </div>
           </div>
 
           {/* Info Section */}
-          <div className="hospital-info1">
-            <h3 id='hospital_name1'>
+          <div className="hospital-info-content">
+            <h3 className='hospital-name-title'>
               {hospital_name}
             </h3>
 
-            <div className="info-body">
-              <p id='location1'>
-                <FontAwesomeIcon icon={faMapMarkerAlt} className="card-icon loc-icon" /> 
-                {hospital_location}
-              </p>
+            {/* ✅ UPDATED: Clean Vertical List Layout */}
+            <div className="info-body-list">
+              <div className="info-row">
+                <div className="icon-box loc-icon">
+                   <FontAwesomeIcon icon={faMapMarkerAlt} /> 
+                </div>
+                <span className="info-text">{hospital_location}</span>
+              </div>
               
-              <p id='ph_number1'>
-                <FontAwesomeIcon icon={faPhoneAlt} className="card-icon phone-icon" /> 
-                {hospital_phone_number}
-              </p>
+              <div className="info-row">
+                <div className="icon-box phone-icon">
+                  <FontAwesomeIcon icon={faPhoneAlt} /> 
+                </div>
+                <span className="info-text">{hospital_phone_number}</span>
+              </div>
 
-              <p id='timing1'>
-                <FontAwesomeIcon icon={faClock} className="card-icon time-icon" /> 
-                9:00 AM - 5:00 PM
-              </p>
+              <div className="info-row">
+                <div className="icon-box time-icon">
+                  <FontAwesomeIcon icon={faClock} /> 
+                </div>
+                <span className="info-text">{hospital_timing || "9:00 AM - 5:00 PM"}</span>
+              </div>
             </div>
 
-            <div className="card-footer">
-              <div id='rating1' className="rating-box">
-                <span className="stars">
+            {/* Footer */}
+            <div className="card-footer-row">
+              <div className="rating-badge">
+                <span className="stars-icon">
                   <FontAwesomeIcon icon={faStar} />
                   <FontAwesomeIcon icon={faStar} />
                   <FontAwesomeIcon icon={faStar} />
                   <FontAwesomeIcon icon={faStar} />
                   <FontAwesomeIcon icon={faStarHalfAlt} />
                 </span>
-                <span className="rating-value">4.5</span>
+                <span className="rating-num">4.5</span>
               </div>
-              <span className="view-btn">View Details</span>
+              <span className="view-btn-text">View Details</span>
             </div>
 
           </div>

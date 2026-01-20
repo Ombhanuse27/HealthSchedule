@@ -4,6 +4,7 @@ const Counter = require("../model/counterModel");
 const Admin = require("../model/adminModel");
 const axios = require("axios");
 const brevo = require("@getbrevo/brevo");
+const https = require("https");
 require("dotenv").config();
 
 let apiInstance = new brevo.TransactionalEmailsApi();
@@ -246,19 +247,24 @@ exports.bookOpd = async (req, res) => {
     // --- 7. SEND NOTIFICATIONS (EMAIL & SMS) ---
     
    const messageText = `
-🏥 *New Appointment Confirmed!*
-👤 *Patient:* ${cleanName}
-📅 *Date:* ${localDate}
-⏰ *Time:* ${appointmentTimeStr}
-🪪 *Token:* ${counter.seq}
-📞 *Contact:* ${validContactNumber || "N/A"}
+Dear ${cleanName},
+
+Your appointment is confirmed!
+
+👤 Patient Name: ${cleanName}
+📅 Date: ${localDate}
+⏰ Time: ${appointmentTimeStr}
+🪪 Token: ${counter.seq}
+📞 Contact: ${validContactNumber || "N/A"}
+
+Thank you for choosing us.
     `;
 
     // A. Send Email (Brevo)
     if (email) {
       console.log(`Sending email to ${email}...`);
       apiInstance.sendTransacEmail({
-        sender: { email: SENDER_EMAIL, name: "Hospital Appointment System" },
+        sender: { email: SENDER_EMAIL, name: "HealthScheule" },
         to: [{ email: email, name: cleanName }],
         subject: "Appointment Confirmation",
         textContent: messageText,

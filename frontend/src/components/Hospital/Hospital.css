@@ -60,7 +60,10 @@ input::placeholder {
 .hospital-list{
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
+    justify-content: center; /* Centers items in the row */
+  padding: 0 20px;       /* Side padding for the whole grid */
+  max-width: 1400px;     /* Prevents grid from getting too wide on 4k screens */
+  margin: 0 auto;
 }
 
 /* Styles for the new city filter dropdown */
@@ -109,6 +112,7 @@ input::placeholder {
   justify-content: center;
   align-items: center;
   width: 100%;
+  
   margin: 20px 0;
   /* Make sure it's not hidden */
   position: relative;

@@ -19,7 +19,13 @@ const Hospital = () => {
       try {
         const data = await getHospitalsData(); // Fetch hospitals from API
 
-        const formattedHospitals = data.map((hospital) => ({
+        
+
+        const formattedHospitals = data.map((hospital) => {
+
+          const start = hospital.hospitalStartTime || "9:00 AM";
+          const end = hospital.hospitalEndTime || "5:00 PM";
+        return{
           id: hospital._id,
           hospital_img: hospital.hospitalImage || doctorone,
           hospital_name: hospital.hospitalName,
@@ -27,7 +33,9 @@ const Hospital = () => {
           hospital_city: hospital.city, // <-- ADDED CITY
           hospital_phone_number: hospital.contactNumber,
           hospital_speciality: hospital.Specialist,
-        }));
+          hospital_timing: `${start} - ${end}`,
+          };
+        });
 
         // Get unique, sorted list of cities, filtering out any empty values
         const uniqueCities = [
