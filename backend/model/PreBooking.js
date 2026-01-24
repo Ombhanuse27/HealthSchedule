@@ -8,7 +8,7 @@ const preBookingSchema = new mongoose.Schema({
   gender: { type: String, required: true },
   hospitalId: { type: String, required: true },
   hospitalName: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now, expires: 86400 } // Auto-delete after 24 hours
+  createdAt: { type: Date, default: Date.now } // Auto-delete after 24 hours
 });
 
 module.exports = mongoose.model("PreBooking", preBookingSchema);
