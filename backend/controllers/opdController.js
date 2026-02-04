@@ -19,14 +19,14 @@ const SENDER_EMAIL = process.env.EMAIL_FROM;
 
 
 // 👇 PASTE YOUR TELEGRAM DETAILS HERE 👇
-const TELEGRAM_BOT_TOKEN =process.env.TELEGRAM_BOT_TOKEN; 
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // ================= HELPERS =================
 
 const cleanPhoneNumber = (raw) => {
   if (!raw) return "";
-  let num = raw.toString().replace(/\D/g, ""); 
+  let num = raw.toString().replace(/\D/g, "");
   // Fast2SMS expects strict 10 digits for Indian numbers
   if (num.length > 10) return num.slice(-10);
   return num;
@@ -91,12 +91,12 @@ const sendTelegram = async (text) => {
 
   try {
     console.log("📨 Sending Telegram Alert...");
-    
+
     // Create an HTTPS Agent to keep the connection alive (Prevents ECONNRESET)
     const agent = new https.Agent({ keepAlive: true });
 
     await axios.post(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, 
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
       {
         chat_id: TELEGRAM_CHAT_ID,
         text: text,
@@ -110,11 +110,11 @@ const sendTelegram = async (text) => {
     console.log("✅ Telegram Sent Successfully!");
   } catch (error) {
     if (error.code === 'ECONNRESET') {
-        console.error("❌ Telegram Network Error: Connection Reset. Check internet/VPN.");
+      console.error("❌ Telegram Network Error: Connection Reset. Check internet/VPN.");
     } else if (error.response) {
-        console.error("❌ Telegram API Error:", error.response.data);
+      console.error("❌ Telegram API Error:", error.response.data);
     } else {
-        console.error("❌ Telegram Failed:", error.message);
+      console.error("❌ Telegram Failed:", error.message);
     }
   }
 };
@@ -129,41 +129,46 @@ exports.bookOpd = async (req, res) => {
 
   try {
     const { hospitalId } = req.params;
-    let { fullName, contactNumber, email, preferredSlot, selectedDoctor } = req.body;
+    let {
+      fullName,
+      contactNumber,
+      email,
+      preferredSlot,
+      selectedDoctor,
+      appointmentDate
+    } = req.body;
 
     // --- 1. CLEAN INPUTS ---
     const cleanName = fullName.trim();
     let validContactNumber = "";
     if (contactNumber) validContactNumber = cleanPhoneNumber(contactNumber);
-    if (contactNumber) contactNumber = cleanPhoneNumber(contactNumber);
     if (preferredSlot) preferredSlot = cleanTimeSlot(preferredSlot);
 
     if (!mongoose.Types.ObjectId.isValid(hospitalId)) {
       return res.status(400).json({ error: "Invalid Hospital ID" });
     }
 
-    // --- 2. STRICT DUPLICATE CHECK ---
-    const now = new Date();
-    const today = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    const localDate = today.toLocaleDateString("en-CA");
+    // Get "Today" in Kolkata for logic comparison
+    const nowKolkata = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    const todayISO = nowKolkata.toLocaleDateString("en-CA");
 
+    // Use selected date from frontend or fallback to today
+    const targetDate = appointmentDate || todayISO;
+
+    // --- 2. STRICT DUPLICATE CHECK (Per Name and Date) ---
     const existingEntry = await opdModel.findOne({
       fullName: { $regex: new RegExp(`^${cleanName}$`, "i") },
       hospitalId,
-      appointmentDate: localDate,
+      appointmentDate: targetDate,
     });
 
     if (existingEntry) {
-      return res.status(400).json({ 
-        message: `Duplicate Booking: '${cleanName}' already has an appointment today at ${existingEntry.appointmentTime}.` 
+      return res.status(400).json({
+        message: `Duplicate Booking: '${cleanName}' already has an appointment on ${targetDate} at ${existingEntry.appointmentTime}.`
       });
     }
 
     // --- 3. PARSE SLOTS ---
-    if (!preferredSlot || !preferredSlot.includes(" - ")) {
-      return res.status(400).json({ message: `Invalid preferredSlot format.` });
-    }
-
     let start, end, startStr, endStr;
     try {
       const parsed = parseSlotTime(preferredSlot);
@@ -171,56 +176,63 @@ exports.bookOpd = async (req, res) => {
       end = parsed.end;
       startStr = parsed.startStr;
       endStr = parsed.endStr;
-    } catch {
+    } catch (err) {
       return res.status(400).json({ message: "Invalid time slot format." });
     }
 
-    const currentMinutes = today.getHours() * 60 + today.getMinutes();
-    if (currentMinutes >= end) {
-      return res.status(400).json({ message: "Selected slot has already passed." });
+    // --- 4. DYNAMIC TIME VALIDATION ---
+    // If booking for today, ensure the slot hasn't already ended
+    if (targetDate === todayISO) {
+      const currentMinutes = nowKolkata.getHours() * 60 + nowKolkata.getMinutes();
+      if (currentMinutes >= end) {
+        return res.status(400).json({ message: "Selected slot has already passed for today." });
+      }
     }
 
     if (!selectedDoctor || selectedDoctor === "null") selectedDoctor = null;
 
-    // --- 4. FETCH EXISTING APPOINTMENTS (SORTED) ---
+    // --- 5. FETCH EXISTING APPOINTMENTS FOR TARGET DATE ---
     const existingAppointments = await opdModel.find({
       hospitalId,
-      appointmentDate: localDate,
+      appointmentDate: targetDate,
       preferredSlot: `${startStr} - ${endStr}`,
       assignedDoctor: selectedDoctor,
     }).sort({ appointmentTime: 1 });
 
+    // --- 6. SMART GAP FILLING ALGORITHM ---
+    const arrivalBuffer = 20;
+    let searchTime = start;
 
-    // --- 5. SMART GAP FILLING ALGORITHM ---
-    const arrivalBuffer = 20; 
-    let searchTime = Math.max(start, currentMinutes + arrivalBuffer);
+    // If today, start from (current time + buffer), else start from beginning of slot
+    if (targetDate === todayISO) {
+      const currentMinutes = nowKolkata.getHours() * 60 + nowKolkata.getMinutes();
+      searchTime = Math.max(start, currentMinutes + arrivalBuffer);
+    }
+
     searchTime = Math.ceil(searchTime / 5) * 5; // Round to nearest 5 mins
 
     for (const appt of existingAppointments) {
       const apptTime = toMinutes(appt.appointmentTime);
       if (isNaN(apptTime)) continue;
 
-      // Can we fit BEFORE this appointment?
       if (searchTime + 20 <= apptTime) {
-        break; // Found a gap!
+        break; // Gap found
       }
-
-      // If we overlap, jump to 20 mins after this appointment
       if (searchTime < apptTime + 20) {
         searchTime = apptTime + 20;
       }
     }
 
-    // Validate Final Time
+    // Final limit check
     if (searchTime >= end) {
       return res.status(400).json({
-        message: `Slot full. Next available time (${formatTime(searchTime)}) exceeds slot closing time.`,
+        message: `Slot full for ${targetDate}. Next available time exceeds slot closing time.`,
       });
     }
 
     const appointmentTimeStr = formatTime(searchTime);
 
-    // --- 6. SAVE APPOINTMENT ---
+    // --- 7. SAVE APPOINTMENT ---
     const counter = await Counter.findOneAndUpdate(
       { name: "appointmentNumber" },
       { $inc: { seq: 1 } },
@@ -230,9 +242,9 @@ exports.bookOpd = async (req, res) => {
     const newOpdEntry = new opdModel({
       ...req.body,
       fullName: cleanName,
-      contactNumber,
+      contactNumber: validContactNumber,
       hospitalId,
-      appointmentDate: localDate,
+      appointmentDate: targetDate,
       appointmentTime: appointmentTimeStr,
       appointmentNumber: counter.seq,
       preferredSlot: `${startStr} - ${endStr}`,
@@ -242,45 +254,41 @@ exports.bookOpd = async (req, res) => {
     await newOpdEntry.save();
     await Admin.findByIdAndUpdate(hospitalId, { $push: { opdForms: newOpdEntry._id } });
 
-    
-
-    // --- 7. SEND NOTIFICATIONS (EMAIL & SMS) ---
-    
-   const messageText = `
+    // --- 8. SEND NOTIFICATIONS (EMAIL & TELEGRAM) ---
+    const messageText = `
 Dear ${cleanName},
 
 Your appointment is confirmed!
 
 👤 Patient Name: ${cleanName}
-📅 Date: ${localDate}
+📅 Date: ${targetDate}
 ⏰ Time: ${appointmentTimeStr}
 🪪 Token: ${counter.seq}
 📞 Contact: ${validContactNumber || "N/A"}
 
-Thank you for choosing us.
+Thank you for choosing HealthSchedule.
     `;
 
     // A. Send Email (Brevo)
     if (email) {
-      console.log(`Sending email to ${email}...`);
       apiInstance.sendTransacEmail({
-        sender: { email: SENDER_EMAIL, name: "HealthScheule" },
+        sender: { email: SENDER_EMAIL, name: "HealthSchedule" },
         to: [{ email: email, name: cleanName }],
         subject: "Appointment Confirmation",
         textContent: messageText,
       })
-      .then(() => console.log("✅ Email sent successfully"))
-      .catch((e) => console.error("❌ Email failed:", e.body || e.message));
+        .then(() => console.log("✅ Email sent successfully"))
+        .catch((e) => console.error("❌ Email failed:", e.message));
     }
 
+    // B. Telegram Alert
     if (validContactNumber) {
-      // B. Telegram Alert
-      await sendTelegram(messageText);
+      await sendTelegram(messageText).catch(err => console.error("Telegram Error:", err));
     }
 
-    // --- 8. SEND RESPONSE ---
+    // --- 9. SEND RESPONSE ---
     res.status(201).json({
-      message: `Appointment booked successfully at ${appointmentTimeStr}`,
+      message: `Appointment booked successfully for ${targetDate} at ${appointmentTimeStr}`,
       appointment: newOpdEntry.toObject(),
     });
 
@@ -302,15 +310,15 @@ exports.checkDuplicate = async (req, res) => {
 
     // Use STRICT Regex: ^ and $ ensure "Om Bhanuse" doesn't match "Om Bhanuse New"
     const existingEntry = await opdModel.findOne({
-      fullName: { $regex: new RegExp(`^${cleanName}$`, "i") }, 
+      fullName: { $regex: new RegExp(`^${cleanName}$`, "i") },
       hospitalId,
       appointmentDate: todayDate,
     });
 
     if (existingEntry) {
-      return res.status(200).json({ 
-        exists: true, 
-        message: `Duplicate: Appointment already exists at ${existingEntry.appointmentTime}` 
+      return res.status(200).json({
+        exists: true,
+        message: `Duplicate: Appointment already exists at ${existingEntry.appointmentTime}`
       });
     }
 
@@ -323,134 +331,134 @@ exports.checkDuplicate = async (req, res) => {
 
 // ... (Rest of your controllers: dashboard, doctorOpd, etc. remain the same)
 exports.dashboard = async (req, res) => {
-    try {
-      const adminId = req.user.id;
-      const opdRecords = await opdModel.find({ hospitalId: adminId });
-      res.json(opdRecords);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  };
-  
-  exports.doctorOpd = async (req, res) => {
-    try {
-      const doctorId = req.user.id;
-      const opdRecords = await opdModel.find({ assignedDoctor: doctorId });
-      res.json(opdRecords);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  };
-  
-  exports.deleteOpd = async (req, res) => {
-    try {
-      const deleted = await opdModel.findByIdAndDelete(req.params.id);
-      if (!deleted)
-        return res.status(404).json({ message: "OPD not found" });
-      res.json({ message: "OPD deleted successfully" });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  };
-  
-  exports.savePrescription = async (req, res) => {
-    try {
-      const updated = await opdModel.findByIdAndUpdate(
-        req.params.id,
-        {
-          prescriptionPdf: {
-            data: req.body.base64Data,
-            contentType: req.body.contentType,
-          },
-          diagnosis: req.body.diagnosis,
-          medication: req.body.medication,
-          advice: req.body.advice,
-        },
-        { new: true }
-      );
-      res.json({ message: "Prescription saved", data: updated });
-    } catch {
-      res.status(500).json({ error: "Failed to save prescription" });
-    }
-  };
+  try {
+    const adminId = req.user.id;
+    const opdRecords = await opdModel.find({ hospitalId: adminId });
+    res.json(opdRecords);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
-  exports.rescheduleOpd = async (req, res) => {
-    // 🔥 SAME RESCHEDULE LOGIC AS YOU PROVIDED
-    // (kept fully intact, omitted here ONLY to save space)
-  
+exports.doctorOpd = async (req, res) => {
+  try {
+    const doctorId = req.user.id;
+    const opdRecords = await opdModel.find({ assignedDoctor: doctorId });
+    res.json(opdRecords);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.deleteOpd = async (req, res) => {
+  try {
+    const deleted = await opdModel.findByIdAndDelete(req.params.id);
+    if (!deleted)
+      return res.status(404).json({ message: "OPD not found" });
+    res.json({ message: "OPD deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.savePrescription = async (req, res) => {
+  try {
+    const updated = await opdModel.findByIdAndUpdate(
+      req.params.id,
+      {
+        prescriptionPdf: {
+          data: req.body.base64Data,
+          contentType: req.body.contentType,
+        },
+        diagnosis: req.body.diagnosis,
+        medication: req.body.medication,
+        advice: req.body.advice,
+      },
+      { new: true }
+    );
+    res.json({ message: "Prescription saved", data: updated });
+  } catch {
+    res.status(500).json({ error: "Failed to save prescription" });
+  }
+};
+
+exports.rescheduleOpd = async (req, res) => {
+  // 🔥 SAME RESCHEDULE LOGIC AS YOU PROVIDED
+  // (kept fully intact, omitted here ONLY to save space)
+
+  try {
+    const { newSlot } = req.body;
+
+    if (!newSlot) {
+      return res.status(400).json({ message: "New slot is required" });
+    }
+
+    // 1️⃣ Find appointment
+    const appointment = await opdModel.findById(req.params.id);
+    if (!appointment) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    // 2️⃣ Clean & parse slot
+    const cleanedSlot = cleanTimeSlot(newSlot);
+
+    let start, end, startStr, endStr;
     try {
-      const { newSlot } = req.body;
-  
-      if (!newSlot) {
-        return res.status(400).json({ message: "New slot is required" });
-      }
-  
-      // 1️⃣ Find appointment
-      const appointment = await opdModel.findById(req.params.id);
-      if (!appointment) {
-        return res.status(404).json({ message: "Appointment not found" });
-      }
-  
-      // 2️⃣ Clean & parse slot
-      const cleanedSlot = cleanTimeSlot(newSlot);
-  
-      let start, end, startStr, endStr;
-      try {
-        const parsed = parseSlotTime(cleanedSlot);
-        start = parsed.start;
-        end = parsed.end;
-        startStr = parsed.startStr;
-        endStr = parsed.endStr;
-  
-        if (isNaN(start) || isNaN(end)) throw new Error();
-      } catch {
-        return res.status(400).json({
-          message: "Invalid slot format. Please select a valid slot.",
-        });
-      }
-  
-      // 3️⃣ Current IST time
-      const nowIST = new Date(
-        new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-      );
-      const currentMinutes = nowIST.getHours() * 60 + nowIST.getMinutes();
-  
-      // 4️⃣ Fetch existing appointments in new slot (exclude current one)
-      const existingAppointments = await opdModel
-        .find({
-          hospitalId: appointment.hospitalId,
-          appointmentDate: appointment.appointmentDate,
-          preferredSlot: `${startStr} - ${endStr}`,
-          _id: { $ne: appointment._id }, // 🔥 important
-        })
-        .sort({ appointmentTime: 1 });
-  
-      // 5️⃣ Calculate next available time
-      let nextTime = start;
-      if (existingAppointments.length > 0) {
-        const last = existingAppointments[existingAppointments.length - 1];
-        const lastMinutes = toMinutes(last.appointmentTime);
-        if (!isNaN(lastMinutes)) nextTime = lastMinutes + 20;
-      }
-  
-      nextTime = Math.max(nextTime, currentMinutes + 20);
-  
-      if (nextTime >= end) {
-        return res.status(400).json({
-          message: `No available time in ${cleanedSlot}. Please try another slot.`,
-        });
-      }
-  
-      const newAppointmentTime = formatTime(nextTime);
-  
-      // 6️⃣ Update appointment
-      appointment.preferredSlot = `${startStr} - ${endStr}`;
-      appointment.appointmentTime = newAppointmentTime;
-  
-      await appointment.save();
-  
-      // 7️⃣ SEND EMAIL / SMS (🔥 IMPORTANT)
-      const messageText = `Dear ${appointment.fullName},
+      const parsed = parseSlotTime(cleanedSlot);
+      start = parsed.start;
+      end = parsed.end;
+      startStr = parsed.startStr;
+      endStr = parsed.endStr;
+
+      if (isNaN(start) || isNaN(end)) throw new Error();
+    } catch {
+      return res.status(400).json({
+        message: "Invalid slot format. Please select a valid slot.",
+      });
+    }
+
+    // 3️⃣ Current IST time
+    const nowIST = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
+    const currentMinutes = nowIST.getHours() * 60 + nowIST.getMinutes();
+
+    // 4️⃣ Fetch existing appointments in new slot (exclude current one)
+    const existingAppointments = await opdModel
+      .find({
+        hospitalId: appointment.hospitalId,
+        appointmentDate: appointment.appointmentDate,
+        preferredSlot: `${startStr} - ${endStr}`,
+        _id: { $ne: appointment._id }, // 🔥 important
+      })
+      .sort({ appointmentTime: 1 });
+
+    // 5️⃣ Calculate next available time
+    let nextTime = start;
+    if (existingAppointments.length > 0) {
+      const last = existingAppointments[existingAppointments.length - 1];
+      const lastMinutes = toMinutes(last.appointmentTime);
+      if (!isNaN(lastMinutes)) nextTime = lastMinutes + 20;
+    }
+
+    nextTime = Math.max(nextTime, currentMinutes + 20);
+
+    if (nextTime >= end) {
+      return res.status(400).json({
+        message: `No available time in ${cleanedSlot}. Please try another slot.`,
+      });
+    }
+
+    const newAppointmentTime = formatTime(nextTime);
+
+    // 6️⃣ Update appointment
+    appointment.preferredSlot = `${startStr} - ${endStr}`;
+    appointment.appointmentTime = newAppointmentTime;
+
+    await appointment.save();
+
+    // 7️⃣ SEND EMAIL / SMS (🔥 IMPORTANT)
+    const messageText = `Dear ${appointment.fullName},
   
   Your appointment has been RESCHEDULED.
   
@@ -459,115 +467,115 @@ exports.dashboard = async (req, res) => {
   🪪 Token No: ${appointment.appointmentNumber}
   
   Thank you.`;
-  
-      if (appointment.email) {
-        apiInstance
-          .sendTransacEmail({
-            sender: { email: process.env.EMAIL_FROM },
-            to: [{ email: appointment.email, name: appointment.fullName }],
-            subject: "Appointment Rescheduled Confirmation",
-            textContent: messageText,
-          })
-          .catch((e) => console.error("Email error:", e.message));
-      } else if (appointment.contactNumber) {
-        axios
-          .get("https://www.fast2sms.com/dev/bulkV2", {
-            params: {
-              message: messageText,
-              language: "english",
-              route: "q",
-              numbers: appointment.contactNumber,
-              authorization: FAST2SMS_API_KEY,
-            },
-          })
-          .catch((e) => console.error("SMS error:", e.message));
-      }
-  
-      // 8️⃣ Response
-      res.status(200).json({
-        message: "Appointment rescheduled successfully",
-        appointment,
-      });
-    } catch (error) {
-      console.error("Reschedule Error:", error);
-      res.status(500).json({ message: error.message || "Server Error" });
+
+    if (appointment.email) {
+      apiInstance
+        .sendTransacEmail({
+          sender: { email: process.env.EMAIL_FROM },
+          to: [{ email: appointment.email, name: appointment.fullName }],
+          subject: "Appointment Rescheduled Confirmation",
+          textContent: messageText,
+        })
+        .catch((e) => console.error("Email error:", e.message));
+    } else if (appointment.contactNumber) {
+      axios
+        .get("https://www.fast2sms.com/dev/bulkV2", {
+          params: {
+            message: messageText,
+            language: "english",
+            route: "q",
+            numbers: appointment.contactNumber,
+            authorization: FAST2SMS_API_KEY,
+          },
+        })
+        .catch((e) => console.error("SMS error:", e.message));
     }
-  };
-  
-  exports.delayOpd = async (req, res) => {
-    // 🔥 SAME DELAY LOGIC AS YOU PROVIDED
-    // (kept fully intact, omitted here ONLY to save space)
-    try {
-      const { delayMinutes } = req.body;
-  
-      if (![5, 10].includes(delayMinutes)) {
-        return res.status(400).json({ message: "Delay must be 5 or 10 minutes" });
-      }
-  
-      const adminId = req.user.id;
-  
-      // 🇮🇳 Current IST time
-      const nowIST = new Date(
-        new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+
+    // 8️⃣ Response
+    res.status(200).json({
+      message: "Appointment rescheduled successfully",
+      appointment,
+    });
+  } catch (error) {
+    console.error("Reschedule Error:", error);
+    res.status(500).json({ message: error.message || "Server Error" });
+  }
+};
+
+exports.delayOpd = async (req, res) => {
+  // 🔥 SAME DELAY LOGIC AS YOU PROVIDED
+  // (kept fully intact, omitted here ONLY to save space)
+  try {
+    const { delayMinutes } = req.body;
+
+    if (![5, 10].includes(delayMinutes)) {
+      return res.status(400).json({ message: "Delay must be 5 or 10 minutes" });
+    }
+
+    const adminId = req.user.id;
+
+    // 🇮🇳 Current IST time
+    const nowIST = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
+    const todayDate = nowIST.toLocaleDateString("en-CA");
+    const currentMinutes = nowIST.getHours() * 60 + nowIST.getMinutes();
+
+    // 1️⃣ Fetch ONLY assigned appointments for today
+    const appointments = await opdModel.find({
+      hospitalId: adminId,
+      appointmentDate: todayDate,
+      assignedDoctor: { $ne: null }, // 🔒 VERY IMPORTANT
+    });
+
+    // 2️⃣ GROUP by doctor + slot (🔥 KEY FIX)
+    const grouped = {};
+    for (const appt of appointments) {
+      const key = `${appt.assignedDoctor}_${appt.preferredSlot}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(appt);
+    }
+
+    let updatedCount = 0;
+    let notifiedCount = 0;
+
+    // 3️⃣ Apply delay PER QUEUE
+    for (const key in grouped) {
+      const queue = grouped[key].sort(
+        (a, b) => toMinutes(a.appointmentTime) - toMinutes(b.appointmentTime)
       );
-      const todayDate = nowIST.toLocaleDateString("en-CA");
-      const currentMinutes = nowIST.getHours() * 60 + nowIST.getMinutes();
-  
-      // 1️⃣ Fetch ONLY assigned appointments for today
-      const appointments = await opdModel.find({
-        hospitalId: adminId,
-        appointmentDate: todayDate,
-        assignedDoctor: { $ne: null }, // 🔒 VERY IMPORTANT
-      });
-  
-      // 2️⃣ GROUP by doctor + slot (🔥 KEY FIX)
-      const grouped = {};
-      for (const appt of appointments) {
-        const key = `${appt.assignedDoctor}_${appt.preferredSlot}`;
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push(appt);
-      }
-  
-      let updatedCount = 0;
-      let notifiedCount = 0;
-  
-      // 3️⃣ Apply delay PER QUEUE
-      for (const key in grouped) {
-        const queue = grouped[key].sort(
-          (a, b) => toMinutes(a.appointmentTime) - toMinutes(b.appointmentTime)
-        );
-  
-        for (const appointment of queue) {
-          const oldMinutes = toMinutes(appointment.appointmentTime);
-  
-          // ⛔ Skip past appointments
-          if (isNaN(oldMinutes) || oldMinutes <= currentMinutes) continue;
-  
-          // Parse slot boundaries
-          let start, end;
-          try {
-            const parsed = parseSlotTime(appointment.preferredSlot);
-            start = parsed.start;
-            end = parsed.end;
-          } catch {
-            continue;
-          }
-  
-          const newMinutes = oldMinutes + delayMinutes;
-  
-          // 🚨 Do not cross slot end
-          if (newMinutes >= end) continue;
-  
-          const newTimeStr = formatTime(newMinutes);
-          if (newTimeStr === appointment.appointmentTime) continue;
-  
-          // 4️⃣ Update appointment
-          appointment.appointmentTime = newTimeStr;
-          await appointment.save();
-          updatedCount++;
-  
-          // 5️⃣ Notify patient
-          const messageText = `Dear ${appointment.fullName},
+
+      for (const appointment of queue) {
+        const oldMinutes = toMinutes(appointment.appointmentTime);
+
+        // ⛔ Skip past appointments
+        if (isNaN(oldMinutes) || oldMinutes <= currentMinutes) continue;
+
+        // Parse slot boundaries
+        let start, end;
+        try {
+          const parsed = parseSlotTime(appointment.preferredSlot);
+          start = parsed.start;
+          end = parsed.end;
+        } catch {
+          continue;
+        }
+
+        const newMinutes = oldMinutes + delayMinutes;
+
+        // 🚨 Do not cross slot end
+        if (newMinutes >= end) continue;
+
+        const newTimeStr = formatTime(newMinutes);
+        if (newTimeStr === appointment.appointmentTime) continue;
+
+        // 4️⃣ Update appointment
+        appointment.appointmentTime = newTimeStr;
+        await appointment.save();
+        updatedCount++;
+
+        // 5️⃣ Notify patient
+        const messageText = `Dear ${appointment.fullName},
   
   Your appointment time has been DELAYED by ${delayMinutes} minutes.
   
@@ -577,41 +585,41 @@ exports.dashboard = async (req, res) => {
   
   Thank you for your patience.
   - Hospital Team`;
-  
-          if (appointment.email) {
-            apiInstance
-              .sendTransacEmail({
-                sender: { email: process.env.EMAIL_FROM },
-                to: [{ email: appointment.email, name: appointment.fullName }],
-                subject: "Appointment Time Updated",
-                textContent: messageText,
-              })
-              .catch((e) => console.error("Delay email error:", e.message));
-          } else if (appointment.contactNumber) {
-            axios
-              .get("https://www.fast2sms.com/dev/bulkV2", {
-                params: {
-                  message: messageText,
-                  language: "english",
-                  route: "q",
-                  numbers: appointment.contactNumber,
-                  authorization: FAST2SMS_API_KEY,
-                },
-              })
-              .catch((e) => console.error("Delay SMS error:", e.message));
-          }
-  
-          notifiedCount++;
+
+        if (appointment.email) {
+          apiInstance
+            .sendTransacEmail({
+              sender: { email: process.env.EMAIL_FROM },
+              to: [{ email: appointment.email, name: appointment.fullName }],
+              subject: "Appointment Time Updated",
+              textContent: messageText,
+            })
+            .catch((e) => console.error("Delay email error:", e.message));
+        } else if (appointment.contactNumber) {
+          axios
+            .get("https://www.fast2sms.com/dev/bulkV2", {
+              params: {
+                message: messageText,
+                language: "english",
+                route: "q",
+                numbers: appointment.contactNumber,
+                authorization: FAST2SMS_API_KEY,
+              },
+            })
+            .catch((e) => console.error("Delay SMS error:", e.message));
         }
+
+        notifiedCount++;
       }
-  
-      res.status(200).json({
-        message: `Delay of ${delayMinutes} minutes applied successfully`,
-        updatedAppointments: updatedCount,
-        notificationsSent: notifiedCount,
-      });
-    } catch (error) {
-      console.error("Global Delay Error:", error);
-      res.status(500).json({ message: "Failed to apply delay" });
     }
-  };
+
+    res.status(200).json({
+      message: `Delay of ${delayMinutes} minutes applied successfully`,
+      updatedAppointments: updatedCount,
+      notificationsSent: notifiedCount,
+    });
+  } catch (error) {
+    console.error("Global Delay Error:", error);
+    res.status(500).json({ message: "Failed to apply delay" });
+  }
+};

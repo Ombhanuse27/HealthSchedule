@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { getHospitals } from "../api/adminApi";
 import { getDoctorsData } from "../api/doctorApi";
-import {submitOpdForm,checkDuplicate} from "../api/opdApi";
+import { submitOpdForm, checkDuplicate } from "../api/opdApi";
 import React from "react";
 
 
@@ -111,8 +111,10 @@ const OpdForm = () => {
     diagnosis: "",
     hospitalId: "",
     hospitalName: "",
+
     selectedDoctor: "", // Field for selected doctor
     preferredSlot: "", // Field for preferred slot
+    appointmentDate: new Date().toISOString().split('T')[0],
   });
 
   const [hospitals, setHospitals] = useState([]);
@@ -134,86 +136,108 @@ const OpdForm = () => {
     fetchHospitals();
   }, []);
 
- const handleChange = async (e) => {
-  const { name, value } = e.target;
+  /**
+ * Generates an array of dates from today until the end of the current week (Saturday).
+ */
+  const getAvailableDates = () => {
+    const dates = [];
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 (Sun) to 6 (Sat)
 
-  if (name === "hospitalId") {
-    const selectedHospital = hospitals.find((hospital) => hospital._id === value);
+    // Get days remaining in the current week (up to Saturday)
+    for (let i = 0; i <= (6 - dayOfWeek); i++) {
+      const nextDate = new Date();
+      nextDate.setDate(today.getDate() + i);
 
-    if (selectedHospital) {
-  console.log("Selected Hospital:", selectedHospital);
+      // Format as YYYY-MM-DD for the backend and "Day, MMM DD" for the user
+      dates.push({
+        iso: nextDate.toISOString().split('T')[0],
+        label: i === 0 ? "Today" : nextDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+      });
+    }
+    return dates;
+  };
 
-  const newTimeSlots = generateTimeSlots(
-    selectedHospital.hospitalStartTime,
-    selectedHospital.hospitalEndTime
-  );
+  const handleChange = async (e) => {
+    const { name, value } = e.target;
 
-  setTimeSlots(newTimeSlots);
+    if (name === "hospitalId") {
+      const selectedHospital = hospitals.find((hospital) => hospital._id === value);
 
-  try {
-    const allDoctors = await getDoctorsData();
-    const hospitalDoctors = allDoctors.filter(
-      (doc) => doc.hospitalId === selectedHospital._id
-    );
+      if (selectedHospital) {
+        console.log("Selected Hospital:", selectedHospital);
 
-    console.log("Filtered Doctors:", hospitalDoctors);
-    setDoctors(hospitalDoctors);
-  } catch (err) {
-    console.error("Error fetching doctors:", err);
-    setDoctors([]);
-  }
+        const newTimeSlots = generateTimeSlots(
+          selectedHospital.hospitalStartTime,
+          selectedHospital.hospitalEndTime
+        );
 
-  console.log(formData);
+        setTimeSlots(newTimeSlots);
 
-  // ✅ RESET doctor selection every time a new hospital is chosen
-  setFormData((prev) => ({
-    ...prev,
-    hospitalId: value,
-    hospitalName: selectedHospital.username,
-    preferredSlot: "",
-    selectedDoctor: "", // ensure it's blank
-  }));
+        try {
+          const allDoctors = await getDoctorsData();
+          const hospitalDoctors = allDoctors.filter(
+            (doc) => doc.hospitalId === selectedHospital._id
+          );
 
-  // ✅ (Optional) Clear console log until doctor is manually selected
-  console.log("Form data after hospital selection reset:", {
-    ...formData,
-    hospitalId: value,
-    hospitalName: selectedHospital.username,
-    selectedDoctor: "", // explicitly blank
-  });
-}
- else {
-      // Clear data when hospital deselected
-      setTimeSlots([]);
-      setDoctors([]);
+          console.log("Filtered Doctors:", hospitalDoctors);
+          setDoctors(hospitalDoctors);
+        } catch (err) {
+          console.error("Error fetching doctors:", err);
+          setDoctors([]);
+        }
+
+        console.log(formData);
+
+        // ✅ RESET doctor selection every time a new hospital is chosen
+        setFormData((prev) => ({
+          ...prev,
+          hospitalId: value,
+          hospitalName: selectedHospital.username,
+          preferredSlot: "",
+          selectedDoctor: "", // ensure it's blank
+        }));
+
+        // ✅ (Optional) Clear console log until doctor is manually selected
+        console.log("Form data after hospital selection reset:", {
+          ...formData,
+          hospitalId: value,
+          hospitalName: selectedHospital.username,
+          selectedDoctor: "", // explicitly blank
+        });
+      }
+      else {
+        // Clear data when hospital deselected
+        setTimeSlots([]);
+        setDoctors([]);
+        setFormData((prev) => ({
+          ...prev,
+          hospitalId: "",
+          hospitalName: "",
+          preferredSlot: "",
+          selectedDoctor: "",
+        }));
+
+
+
+      }
+    }
+    else if (name === "selectedDoctor") {
       setFormData((prev) => ({
         ...prev,
-        hospitalId: "",
-        hospitalName: "",
-        preferredSlot: "",
-        selectedDoctor: "",
+        selectedDoctor: value, // store selected doctor id
       }));
+      console.log("Selected Doctor:", value);
 
-
-      
     }
-  }
-   else if (name === "selectedDoctor") {
-    setFormData((prev) => ({
-      ...prev,
-      selectedDoctor: value, // store selected doctor id
-    }));
-    console.log("Selected Doctor:", value);
-    
-  }  
-  else {
-    // Normal field updates
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  }
-};
+    else {
+      // Normal field updates
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
+  };
 
   const checkIfDuplicateExists = async () => {
     try {
@@ -231,56 +255,56 @@ const OpdForm = () => {
 
   // In OpdForm.js
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-  const confirmBooking = window.confirm("Do you want to book an appointment?");
-  if (!confirmBooking) return;
+    const confirmBooking = window.confirm("Do you want to book an appointment?");
+    if (!confirmBooking) return;
 
-  // Check for duplicate before proceeding
-  const isDuplicate = await checkIfDuplicateExists();
-  if (isDuplicate) {
-    alert("This Full Name already exists. Please use a different name.");
-    return;
-  }
-
-  // --- Dynamic Time Validation ---
-  const selectedHospital = hospitals.find(
-    (h) => h._id === formData.hospitalId
-  );
-  if (!selectedHospital) {
-    alert("Invalid hospital selected.");
-    return;
-  }
-
-  try {
-    const response = await submitOpdForm(formData.hospitalId, formData);
-    
-    // ✅ DEBUGGING: Log the response to see exactly what is coming back
-    console.log("Booking Response:", response);
-
-    // ✅ FIX: Check response.data.appointment OR response.appointment depending on your API wrapper
-    // Most likely, the structure is response.data.appointment
-    const appointmentData = response?.data?.appointment || response?.appointment;
-
-    if (!appointmentData?._id) {
-      throw new Error("Appointment created, but ID missing in response.");
+    // Check for duplicate before proceeding
+    const isDuplicate = await checkIfDuplicateExists();
+    if (isDuplicate) {
+      alert("This Full Name already exists. Please use a different name.");
+      return;
     }
 
-    // Success Message
-    alert(response?.data?.message || response?.message || "Appointment booked successfully!");
-    
-    // Optional: Reset form or redirect here
-    
-  } catch (error) {
-    console.error("Booking Error:", error);
-    alert(
-      error?.response?.data?.message ||
-      error.message ||
-      "Appointment booking failed"
+    // --- Dynamic Time Validation ---
+    const selectedHospital = hospitals.find(
+      (h) => h._id === formData.hospitalId
     );
-  }
-};
+    if (!selectedHospital) {
+      alert("Invalid hospital selected.");
+      return;
+    }
+
+    try {
+      const response = await submitOpdForm(formData.hospitalId, formData);
+
+      // ✅ DEBUGGING: Log the response to see exactly what is coming back
+      console.log("Booking Response:", response);
+
+      // ✅ FIX: Check response.data.appointment OR response.appointment depending on your API wrapper
+      // Most likely, the structure is response.data.appointment
+      const appointmentData = response?.data?.appointment || response?.appointment;
+
+      if (!appointmentData?._id) {
+        throw new Error("Appointment created, but ID missing in response.");
+      }
+
+      // Success Message
+      alert(response?.data?.message || response?.message || "Appointment booked successfully!");
+
+      // Optional: Reset form or redirect here
+
+    } catch (error) {
+      console.error("Booking Error:", error);
+      alert(
+        error?.response?.data?.message ||
+        error.message ||
+        "Appointment booking failed"
+      );
+    }
+  };
 
   return (
     <div className="w-full bg-gradient-to-b from-blue-100 to-blue-200 min-h-screen">
@@ -353,33 +377,51 @@ const handleSubmit = async (e) => {
 
                   <div className="flex flex-col">
 
-  <label
-    htmlFor="selectedDoctor"
-    className="block text-sm font-medium text-gray-700 mb-2"
-  >
-    Choose Doctor (Optional)
-  </label>
-  <select
-    id="selectedDoctor"
-    name="selectedDoctor"
-    value={formData.selectedDoctor || ""}
-    onChange={handleChange}
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-    disabled={!formData.hospitalId}
-  >
-    <option value="">
-      {doctors.length > 0
-        ? "Select a doctor"
-        : "No doctors available for this hospital"}
-    </option>
-    {doctors.map((doctor) => (
-      <option key={doctor._id} value={doctor._id}>
-        {doctor.fullName}
-      </option>
-    ))}
-  </select>
-</div>
-
+                    <label
+                      htmlFor="selectedDoctor"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Choose Doctor (Optional)
+                    </label>
+                    <select
+                      id="selectedDoctor"
+                      name="selectedDoctor"
+                      value={formData.selectedDoctor || ""}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      disabled={!formData.hospitalId}
+                    >
+                      <option value="">
+                        {doctors.length > 0
+                          ? "Select a doctor"
+                          : "No doctors available for this hospital"}
+                      </option>
+                      {doctors.map((doctor) => (
+                        <option key={doctor._id} value={doctor._id}>
+                          {doctor.fullName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col">
+                    <label htmlFor="appointmentDate" className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Date
+                    </label>
+                    <select
+                      id="appointmentDate"
+                      name="appointmentDate"
+                      value={formData.appointmentDate}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      required
+                    >
+                      {getAvailableDates().map((date) => (
+                        <option key={date.iso} value={date.iso}>
+                          {date.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   {Object.keys(formData).map(
                     (key) =>
@@ -399,8 +441,8 @@ const handleSubmit = async (e) => {
                               key === "email"
                                 ? "email"
                                 : key === "age"
-                                ? "number"
-                                : "text"
+                                  ? "number"
+                                  : "text"
                             }
                             id={key}
                             name={key}
