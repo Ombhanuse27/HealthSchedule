@@ -383,25 +383,19 @@ exports.savePrescription = async (req, res) => {
 };
 
 exports.rescheduleOpd = async (req, res) => {
-  // 🔥 SAME RESCHEDULE LOGIC AS YOU PROVIDED
-  // (kept fully intact, omitted here ONLY to save space)
-
   try {
-    const { newSlot } = req.body;
+    const { newSlot, newDate } = req.body;
 
     if (!newSlot) {
       return res.status(400).json({ message: "New slot is required" });
     }
 
-    // 1️⃣ Find appointment
     const appointment = await opdModel.findById(req.params.id);
     if (!appointment) {
       return res.status(404).json({ message: "Appointment not found" });
     }
 
-    // 2️⃣ Clean & parse slot
     const cleanedSlot = cleanTimeSlot(newSlot);
-
     let start, end, startStr, endStr;
     try {
       const parsed = parseSlotTime(cleanedSlot);
@@ -409,89 +403,93 @@ exports.rescheduleOpd = async (req, res) => {
       end = parsed.end;
       startStr = parsed.startStr;
       endStr = parsed.endStr;
-
-      if (isNaN(start) || isNaN(end)) throw new Error();
     } catch {
-      return res.status(400).json({
-        message: "Invalid slot format. Please select a valid slot.",
-      });
+      return res.status(400).json({ message: "Invalid slot format." });
     }
 
-    // 3️⃣ Current IST time
-    const nowIST = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-    );
-    const currentMinutes = nowIST.getHours() * 60 + nowIST.getMinutes();
+    const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    const todayISO = nowIST.toLocaleDateString("en-CA");
 
-    // 4️⃣ Fetch existing appointments in new slot (exclude current one)
+    // Use new date if provided, otherwise keep existing
+    const targetDate = newDate || appointment.appointmentDate;
+    const isToday = targetDate === todayISO;
+
+    // Fetch existing apps on that SPECIFIC date and slot
     const existingAppointments = await opdModel
       .find({
         hospitalId: appointment.hospitalId,
-        appointmentDate: appointment.appointmentDate,
+        appointmentDate: targetDate,
         preferredSlot: `${startStr} - ${endStr}`,
-        _id: { $ne: appointment._id }, // 🔥 important
+        _id: { $ne: appointment._id },
       })
       .sort({ appointmentTime: 1 });
 
-    // 5️⃣ Calculate next available time
     let nextTime = start;
+
     if (existingAppointments.length > 0) {
       const last = existingAppointments[existingAppointments.length - 1];
       const lastMinutes = toMinutes(last.appointmentTime);
-      if (!isNaN(lastMinutes)) nextTime = lastMinutes + 20;
+      if (!isNaN(lastMinutes)) {
+        nextTime = lastMinutes + 20;
+      }
     }
 
-    nextTime = Math.max(nextTime, currentMinutes + 20);
+    // Only block past times if the reschedule date IS today
+    if (isToday) {
+      const currentMinutes = nowIST.getHours() * 60 + nowIST.getMinutes();
+      nextTime = Math.max(nextTime, currentMinutes + 20);
+    }
 
     if (nextTime >= end) {
       return res.status(400).json({
-        message: `No available time in ${cleanedSlot}. Please try another slot.`,
+        message: `Slot full for ${targetDate}. Try another slot.`,
       });
     }
 
     const newAppointmentTime = formatTime(nextTime);
 
-    // 6️⃣ Update appointment
+    // 🔥 SAVE UPDATED VALUES
     appointment.preferredSlot = `${startStr} - ${endStr}`;
     appointment.appointmentTime = newAppointmentTime;
+    appointment.appointmentDate = targetDate;
 
     await appointment.save();
 
-    // 7️⃣ SEND EMAIL / SMS (🔥 IMPORTANT)
-    const messageText = `Dear ${appointment.fullName},
-  
-  Your appointment has been RESCHEDULED.
-  
-  📅 Date: ${appointment.appointmentDate}
-  ⏰ Time: ${newAppointmentTime}
-  🪪 Token No: ${appointment.appointmentNumber}
-  
-  Thank you.`;
+    // --- 8. SEND NOTIFICATIONS (EMAIL & SMS) ---
+    const messageText = `
+Dear ${appointment.fullName},
 
+Your appointment has been RESCHEDULED successfully.
+
+📅 New Date: ${targetDate}
+⏰ New Time: ${newAppointmentTime}
+🏥 Slot: ${appointment.preferredSlot}
+🪪 Token No: ${appointment.appointmentNumber}
+
+Thank you for choosing HealthSchedule.
+    `;
+
+    // A. Send Email (Brevo)
     if (appointment.email) {
-      apiInstance
-        .sendTransacEmail({
-          sender: { email: process.env.EMAIL_FROM },
-          to: [{ email: appointment.email, name: appointment.fullName }],
-          subject: "Appointment Rescheduled Confirmation",
-          textContent: messageText,
-        })
-        .catch((e) => console.error("Email error:", e.message));
-    } else if (appointment.contactNumber) {
-      axios
-        .get("https://www.fast2sms.com/dev/bulkV2", {
-          params: {
-            message: messageText,
-            language: "english",
-            route: "q",
-            numbers: appointment.contactNumber,
-            authorization: FAST2SMS_API_KEY,
-          },
-        })
-        .catch((e) => console.error("SMS error:", e.message));
+      apiInstance.sendTransacEmail({
+        sender: { email: SENDER_EMAIL, name: "HealthSchedule" },
+        to: [{ email: appointment.email, name: appointment.fullName }],
+        subject: "Appointment Rescheduled Confirmation",
+        textContent: messageText,
+      })
+        .then(() => console.log("✅ Reschedule Email sent"))
+        .catch((e) => console.error("❌ Reschedule Email failed:", e.message));
     }
 
-    // 8️⃣ Response
+    // B. Telegram/SMS Alert (Optional - based on your contactNumber logic)
+    if (appointment.contactNumber) {
+      // You can call your sendTelegram or Fast2SMS logic here
+      await sendTelegram(messageText).catch(err => console.error("Telegram Error:", err));
+    }
+
+
+    // Notification Logic (Keep your existing Brevo/SMS logic here...)
+
     res.status(200).json({
       message: "Appointment rescheduled successfully",
       appointment,

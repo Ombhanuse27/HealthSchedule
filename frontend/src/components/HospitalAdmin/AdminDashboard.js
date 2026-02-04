@@ -105,6 +105,8 @@ const AdminDashboard = ({ children }) => {
   const [newSlot, setNewSlot] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [rescheduleDate, setRescheduleDate] = useState("");
+
 
 
 
@@ -115,42 +117,121 @@ const AdminDashboard = ({ children }) => {
     return timeSlots.slice(index + 1);
   };
 
+  // --- 🆕 Helper for Date Selection (Today until Saturday) ---
+  const getAvailableRescheduleDates = () => {
+    const dates = [];
+    const today = new Date();
+    const currentDay = today.getDay();
+    const daysUntilSaturday = 6 - currentDay;
+
+    for (let i = 0; i <= daysUntilSaturday; i++) {
+      const nextDate = new Date();
+      nextDate.setDate(today.getDate() + i);
+      const isoDate = nextDate.toLocaleDateString("en-CA");
+      const label = i === 0 ? "Today" : nextDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+      dates.push({ isoDate, label });
+    }
+    return dates;
+  };
+
+  // --- Inside AdminDashboard Component ---
+
   const handleReschedule = async () => {
-    if (!newSlot || !rescheduleRecord) return;
+    if (!newSlot || !rescheduleRecord || !rescheduleDate) {
+      alert("Please select both date and time slot.");
+      return;
+    }
 
     try {
       setRescheduling(true);
+      const token = localStorage.getItem("token");
 
       const response = await rescheduleOpdAppointment(
         rescheduleRecord._id,
-        newSlot,
+        {
+          newSlot: newSlot,
+          newDate: rescheduleDate
+        },
         token
       );
 
-      alert("Appointment rescheduled successfully!");
+      console.log("Reschedule API Response:", response); // Debugging
 
-      // 🔄 Update UI instantly
-      setOpdRecords((prev) =>
-        prev.map((r) =>
-          r._id === rescheduleRecord._id
-            ? {
-              ...r,
-              preferredSlot: response.appointment.preferredSlot,
-              appointmentTime: response.appointment.appointmentTime,
+      // ✅ FIX: check response.appointment OR response.data.appointment depending on your axios wrapper
+      const updatedAppt = response?.appointment || response?.data?.appointment;
+
+      if (updatedAppt) {
+        // 🔄 Update state first
+        setOpdRecords((prev) =>
+          prev.map((r) => {
+            if (r && r._id === rescheduleRecord._id) {
+              return {
+                ...r,
+                appointmentDate: updatedAppt.appointmentDate,
+                preferredSlot: updatedAppt.preferredSlot,
+                appointmentTime: updatedAppt.appointmentTime,
+              };
             }
-            : r
-        )
-      );
+            return r;
+          })
+        );
 
-      setRescheduleRecord(null);
-      setNewSlot("");
+        // ✅ Call Alert AFTER state update to ensure it pops up
+        alert(response?.message || "Appointment rescheduled successfully!");
+
+        // Close modal and reset
+        setRescheduleRecord(null);
+        setNewSlot("");
+        setRescheduleDate("");
+      } else {
+        throw new Error("Backend did not return updated appointment data.");
+      }
+
     } catch (error) {
-      alert(error.response?.data?.message || "Failed to reschedule appointment");
+      console.error("Reschedule Error:", error);
+      alert(error.response?.data?.message || error.message || "Failed to reschedule appointment");
     } finally {
       setRescheduling(false);
     }
   };
 
+  // --- Update Filtering Logic ---
+
+  const filteredRecords = opdRecords.filter((record) => {
+    // ✅ CHECK 3: Ensure record exists before accessing properties
+    if (!record) return false;
+
+    const matchesDoctor = selectedDoctorId
+      ? (record.assignedDoctor && (record.assignedDoctor._id === selectedDoctorId || record.assignedDoctor === selectedDoctorId))
+      : true;
+
+    const query = searchQuery.toLowerCase();
+    const matchesSearch =
+      (record.fullName?.toLowerCase() || "").includes(query) ||
+      (record.diagnosis?.toLowerCase() || "").includes(query) ||
+      (record.contactNumber || "").includes(query);
+
+    return matchesDoctor && matchesSearch;
+  });
+
+  // ✅ CHECK 4: Filter out nulls before getting unique dates
+  const uniqueDates = [...new Set(filteredRecords.map((record) => record?.appointmentDate).filter(Boolean))];
+  uniqueDates.sort((a, b) => b.localeCompare(a));
+
+  const datesToShow = selectedDate ? [selectedDate] : uniqueDates;
+
+  const getRecordsForDateAndSlot = (date, slot) => {
+    const [startStr, endStr] = slot.split(" - ");
+    const slotStartMin = parseTime(startStr);
+    const slotEndMin = parseTime(endStr);
+
+    // ✅ FIX: Filter from 'filteredRecords' so the search actually works in the slots
+    return filteredRecords.filter(record => {
+      if (!record || record.appointmentDate !== date) return false;
+      const apptMin = parseTime(record.appointmentTime);
+      return apptMin >= slotStartMin && apptMin < slotEndMin;
+    }).sort((a, b) => parseTime(a.appointmentTime) - parseTime(b.appointmentTime));
+  };
   const applyDelay = async (minutes) => {
     if (!window.confirm(`Delay all upcoming appointments by ${minutes} minutes?`)) return;
 
@@ -269,42 +350,10 @@ const AdminDashboard = ({ children }) => {
     )
     : opdRecords;
 
-  const filteredRecords = opdRecords.filter((record) => {
-    // 1. Doctor Filter
-    const matchesDoctor = selectedDoctorId
-      ? (record.assignedDoctor && (record.assignedDoctor._id === selectedDoctorId || record.assignedDoctor === selectedDoctorId))
-      : true;
-
-    // 2. Search Query Filter (Name, Diagnosis, or Contact Number)
-    const query = searchQuery.toLowerCase();
-    const matchesSearch =
-      record.fullName.toLowerCase().includes(query) ||
-      (record.diagnosis && record.diagnosis.toLowerCase().includes(query)) ||
-      (record.contactNumber && record.contactNumber.includes(query));
-
-    return matchesDoctor && matchesSearch;
-  });
-
-  // Use filteredRecords for the rest of the component
-  const uniqueDates = [...new Set(filteredRecords.map((record) => record.appointmentDate))];
-  uniqueDates.sort((a, b) => b.localeCompare(a));
-
-  const datesToShow = selectedDate ? [selectedDate] : uniqueDates;
 
 
 
 
-  const getRecordsForDateAndSlot = (date, slot) => {
-    const [startStr, endStr] = slot.split(" - ");
-    const slotStartMin = parseTime(startStr);
-    const slotEndMin = parseTime(endStr);
-
-    return doctorFilteredRecords.filter(record => {
-      if (record.appointmentDate !== date) return false;
-      const apptMin = parseTime(record.appointmentTime);
-      return apptMin >= slotStartMin && apptMin < slotEndMin;
-    }).sort((a, b) => parseTime(a.appointmentTime) - parseTime(b.appointmentTime));
-  };
 
   const getUncategorizedRecordsForDate = (date) => {
     if (timeSlots.length === 0) {
@@ -539,48 +588,80 @@ const AdminDashboard = ({ children }) => {
             {children}
 
             {rescheduleRecord && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md">
-                  <h3 className="text-xl font-bold mb-4 text-slate-800 dark:text-white">
-                    Reschedule Appointment
-                  </h3>
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-md border border-slate-100 animate-in fade-in zoom-in duration-200">
+                  <div className="flex items-center gap-3 mb-4 text-teal-600">
+                    <Calendar size={24} />
+                    <h3 className="text-xl font-bold dark:text-white">Reschedule Appointment</h3>
+                  </div>
 
-                  <p className="text-sm text-slate-500 mb-3">
-                    Current Slot:{" "}
-                    <span className="font-semibold">
-                      {rescheduleRecord.preferredSlot}
-                    </span>
-                  </p>
+                  <div className="space-y-5">
+                    {/* 1. Date Picker */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select New Date</label>
+                      <select
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-teal-500 outline-none transition-all"
+                        value={rescheduleDate}
+                        onChange={(e) => {
+                          setRescheduleDate(e.target.value);
+                          setNewSlot(""); // Reset slot when date changes
+                        }}
+                      >
+                        <option value="">Choose a date...</option>
+                        {getAvailableRescheduleDates().map((date) => (
+                          <option key={date.isoDate} value={date.isoDate}>
+                            {date.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                  <select
-                    className="w-full px-4 py-3 border rounded-lg mb-4"
-                    value={newSlot}
-                    onChange={(e) => setNewSlot(e.target.value)}
-                  >
-                    <option value="">Select new slot</option>
-                    {getNextAvailableSlots(rescheduleRecord.preferredSlot).map(
-                      (slot, index) => (
-                        <option key={index} value={slot}>
-                          {slot}
-                        </option>
-                      )
-                    )}
-                  </select>
+                    {/* 2. Slot Picker */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Time Slot</label>
+                      <select
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-teal-500 outline-none transition-all disabled:opacity-50"
+                        value={newSlot}
+                        onChange={(e) => setNewSlot(e.target.value)}
+                        disabled={!rescheduleDate}
+                      >
+                        <option value="">{rescheduleDate ? "Choose a slot..." : "Select date first"}</option>
+                        {/* Logic: If selecting today, filter past slots. If future, show all. */}
+                        {(rescheduleDate !== todayStr
+                          ? timeSlots
+                          : getNextAvailableSlots(rescheduleRecord.preferredSlot)
+                        ).map((slot, index) => (
+                          <option key={index} value={slot}>
+                            {slot}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                  <div className="flex justify-end gap-3">
+                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                      <p className="text-xs text-blue-700">
+                        <strong>Current:</strong> {rescheduleRecord.appointmentDate} at {rescheduleRecord.appointmentTime}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-8">
                     <button
-                      onClick={() => setRescheduleRecord(null)}
-                      className="px-4 py-2 rounded-lg border"
+                      onClick={() => {
+                        setRescheduleRecord(null);
+                        setRescheduleDate("");
+                      }}
+                      className="px-5 py-2.5 rounded-xl border border-slate-200 font-medium text-slate-600 hover:bg-slate-50 transition-all"
                     >
                       Cancel
                     </button>
 
                     <button
-                      disabled={!newSlot || rescheduling}
+                      disabled={!newSlot || !rescheduleDate || rescheduling}
                       onClick={handleReschedule}
-                      className="px-4 py-2 bg-teal-600 text-white rounded-lg disabled:opacity-50"
+                      className="px-5 py-2.5 bg-teal-600 text-white rounded-xl font-bold shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-95 disabled:opacity-50 transition-all"
                     >
-                      {rescheduling ? "Rescheduling..." : "Confirm"}
+                      {rescheduling ? "Updating..." : "Confirm Reschedule"}
                     </button>
                   </div>
                 </div>

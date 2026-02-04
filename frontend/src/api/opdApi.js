@@ -20,8 +20,15 @@ export const checkDuplicate = (fullName, hospitalId) =>
 export const delayAppointments = (delayMinutes) =>
   axiosInstance.put("/opd/delay", { delayMinutes });
 
-export const rescheduleOpdAppointment = (recordId, newSlot) =>
-  axiosInstance.put(`/opd/${recordId}/reschedule`, { newSlot });
+// Change this to accept an object or multiple arguments
+export const rescheduleOpdAppointment = (recordId, rescheduleData, token) =>
+  axiosInstance.put(
+    `/opd/${recordId}/reschedule`, 
+    rescheduleData, // This will now be { newSlot, newDate }
+    {
+      headers: { Authorization: `Bearer ${token}` }
+    }
+  );
 
 export const savePrescriptionPdf = (
   recordId,
