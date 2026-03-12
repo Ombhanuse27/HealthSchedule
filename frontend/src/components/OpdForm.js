@@ -4,21 +4,12 @@ import { getDoctorsData } from "../api/doctorApi";
 import { submitOpdForm, checkDuplicate } from "../api/opdApi";
 import React from "react";
 
-
 import NavbarLink from "./Navbar/NavbarLink";
 import lottie from "lottie-web";
 import Footer from "./Footer/Footer";
 
-
-
-
 // --- Helper Functions ---
 
-/**
- * Parses a time string (e.g., "9:30 AM" or "8:00 PM") into minutes since midnight.
- * @param {string} timeStr The time string to parse.
- * @returns {number} Total minutes from midnight.
- */
 const parseTime = (timeStr) => {
   if (!timeStr) return 0;
   const [time, period] = timeStr.split(" ");
@@ -26,53 +17,36 @@ const parseTime = (timeStr) => {
   let hour = parseInt(hourStr);
   let minute = parseInt(minuteStr);
 
-  if (period === "PM" && hour !== 12) {
-    hour += 12;
-  }
-  if (period === "AM" && hour === 12) {
-    hour = 0; // Midnight
-  }
+  if (period === "PM" && hour !== 12) hour += 12;
+  if (period === "AM" && hour === 12) hour = 0;
   return hour * 60 + minute;
 };
 
-/**
- * Formats total minutes since midnight into a 12-hour time string (e.g., "9:30 AM").
- * @param {number} totalMinutes The total minutes from midnight.
- * @returns {string} A formatted time string.
- */
 const formatTime = (totalMinutes) => {
   let hour = Math.floor(totalMinutes / 60);
   let minute = totalMinutes % 60;
   const period = hour >= 12 ? "PM" : "AM";
 
   if (hour === 0) {
-    hour = 12; // 12 AM (Midnight)
+    hour = 12; 
   } else if (hour > 12) {
-    hour -= 12; // Convert to 12-hour format
+    hour -= 12; 
   }
 
   const minuteStr = minute.toString().padStart(2, '0');
   return `${hour}:${minuteStr} ${period}`;
 };
 
-/**
- * Generates 3-hour time slots between a start and end time.
- * @param {string} startTimeStr The hospital's start time (e.g., "9:30 AM").
- * @param {string} endTimeStr The hospital's end time (e.g., "8:00 PM").
- * @returns {string[]} An array of formatted time slots.
- */
 const generateTimeSlots = (startTimeStr, endTimeStr) => {
   const startMinutes = parseTime(startTimeStr);
   const endMinutes = parseTime(endTimeStr);
-  const slotDuration = 3 * 60; // 3 hours in minutes
+  const slotDuration = 3 * 60; 
   const slots = [];
 
   for (let currentStart = startMinutes; currentStart < endMinutes; currentStart += slotDuration) {
     const currentEnd = currentStart + slotDuration;
-    // Ensure the slot's end time does not exceed the hospital's closing time
     const slotEnd = Math.min(currentEnd, endMinutes);
 
-    // Only add the slot if it's valid (end is after start)
     if (slotEnd > currentStart) {
       slots.push(`${formatTime(currentStart)} - ${formatTime(slotEnd)}`);
     }
@@ -84,7 +58,6 @@ const generateTimeSlots = (startTimeStr, endTimeStr) => {
 
 const OpdForm = () => {
   const container = useRef(null);
-
   const [doctors, setDoctors] = useState([]);
 
   useEffect(() => {
@@ -111,14 +84,13 @@ const OpdForm = () => {
     diagnosis: "",
     hospitalId: "",
     hospitalName: "",
-
-    selectedDoctor: "", // Field for selected doctor
-    preferredSlot: "", // Field for preferred slot
+    selectedDoctor: "", 
+    preferredSlot: "", 
     appointmentDate: new Date().toISOString().split('T')[0],
   });
 
   const [hospitals, setHospitals] = useState([]);
-  const [timeSlots, setTimeSlots] = useState([]); // State for dynamic time slots
+  const [timeSlots, setTimeSlots] = useState([]); 
 
   useEffect(() => {
     const fetchHospitals = async () => {
@@ -136,20 +108,15 @@ const OpdForm = () => {
     fetchHospitals();
   }, []);
 
-  /**
- * Generates an array of dates from today until the end of the current week (Saturday).
- */
   const getAvailableDates = () => {
     const dates = [];
     const today = new Date();
-    const dayOfWeek = today.getDay(); // 0 (Sun) to 6 (Sat)
+    const dayOfWeek = today.getDay(); 
 
-    // Get days remaining in the current week (up to Saturday)
     for (let i = 0; i <= (6 - dayOfWeek); i++) {
       const nextDate = new Date();
       nextDate.setDate(today.getDate() + i);
 
-      // Format as YYYY-MM-DD for the backend and "Day, MMM DD" for the user
       dates.push({
         iso: nextDate.toISOString().split('T')[0],
         label: i === 0 ? "Today" : nextDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
@@ -165,8 +132,6 @@ const OpdForm = () => {
       const selectedHospital = hospitals.find((hospital) => hospital._id === value);
 
       if (selectedHospital) {
-        console.log("Selected Hospital:", selectedHospital);
-
         const newTimeSlots = generateTimeSlots(
           selectedHospital.hospitalStartTime,
           selectedHospital.hospitalEndTime
@@ -179,35 +144,19 @@ const OpdForm = () => {
           const hospitalDoctors = allDoctors.filter(
             (doc) => doc.hospitalId === selectedHospital._id
           );
-
-          console.log("Filtered Doctors:", hospitalDoctors);
           setDoctors(hospitalDoctors);
         } catch (err) {
-          console.error("Error fetching doctors:", err);
           setDoctors([]);
         }
 
-        console.log(formData);
-
-        // ✅ RESET doctor selection every time a new hospital is chosen
         setFormData((prev) => ({
           ...prev,
           hospitalId: value,
           hospitalName: selectedHospital.username,
           preferredSlot: "",
-          selectedDoctor: "", // ensure it's blank
+          selectedDoctor: "", 
         }));
-
-        // ✅ (Optional) Clear console log until doctor is manually selected
-        console.log("Form data after hospital selection reset:", {
-          ...formData,
-          hospitalId: value,
-          hospitalName: selectedHospital.username,
-          selectedDoctor: "", // explicitly blank
-        });
-      }
-      else {
-        // Clear data when hospital deselected
+      } else {
         setTimeSlots([]);
         setDoctors([]);
         setFormData((prev) => ({
@@ -217,21 +166,13 @@ const OpdForm = () => {
           preferredSlot: "",
           selectedDoctor: "",
         }));
-
-
-
       }
-    }
-    else if (name === "selectedDoctor") {
+    } else if (name === "selectedDoctor") {
       setFormData((prev) => ({
         ...prev,
-        selectedDoctor: value, // store selected doctor id
+        selectedDoctor: value, 
       }));
-      console.log("Selected Doctor:", value);
-
-    }
-    else {
-      // Normal field updates
+    } else {
       setFormData((prev) => ({
         ...prev,
         [name]: value,
@@ -242,10 +183,9 @@ const OpdForm = () => {
   const checkIfDuplicateExists = async () => {
     try {
       const duplicateCheck = await checkDuplicate(
-        formData.fullName.trim(), // <--- TRIM HERE
+        formData.fullName.trim(), 
         formData.hospitalId
       );
-      // Handle response structure safely
       return duplicateCheck?.data?.exists || duplicateCheck?.exists || false;
     } catch (error) {
       console.error("Error checking duplicates:", error);
@@ -253,25 +193,19 @@ const OpdForm = () => {
     }
   };
 
-  // In OpdForm.js
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     const confirmBooking = window.confirm("Do you want to book an appointment?");
     if (!confirmBooking) return;
 
-    // Check for duplicate before proceeding
     const isDuplicate = await checkIfDuplicateExists();
     if (isDuplicate) {
       alert("This Full Name already exists. Please use a different name.");
       return;
     }
 
-    // --- Dynamic Time Validation ---
-    const selectedHospital = hospitals.find(
-      (h) => h._id === formData.hospitalId
-    );
+    const selectedHospital = hospitals.find((h) => h._id === formData.hospitalId);
     if (!selectedHospital) {
       alert("Invalid hospital selected.");
       return;
@@ -279,199 +213,175 @@ const OpdForm = () => {
 
     try {
       const response = await submitOpdForm(formData.hospitalId, formData);
-
-      // ✅ DEBUGGING: Log the response to see exactly what is coming back
-      console.log("Booking Response:", response);
-
-      // ✅ FIX: Check response.data.appointment OR response.appointment depending on your API wrapper
-      // Most likely, the structure is response.data.appointment
       const appointmentData = response?.data?.appointment || response?.appointment;
 
       if (!appointmentData?._id) {
         throw new Error("Appointment created, but ID missing in response.");
       }
 
-      // Success Message
       alert(response?.data?.message || response?.message || "Appointment booked successfully!");
-
-      // Optional: Reset form or redirect here
-
     } catch (error) {
-      console.error("Booking Error:", error);
-      alert(
-        error?.response?.data?.message ||
-        error.message ||
-        "Appointment booking failed"
-      );
+      alert(error?.response?.data?.message || error.message || "Appointment booking failed");
     }
   };
 
+  const inputClass = "w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 outline-none text-gray-700";
+  const labelClass = "block text-sm font-semibold text-gray-600 mb-2";
+
   return (
-    <div className="w-full bg-gradient-to-b from-blue-100 to-blue-200 min-h-screen">
+    <div className="w-full bg-gradient-to-br from-blue-50 via-white to-blue-100 min-h-screen flex flex-col font-sans">
       <NavbarLink />
-      <div className="appointment bg-blue-100 rounded-[30px] p-[80px_40px_40px_40px] mx-[20px] relative overflow-hidden mt-36 shadow-lg">
-        <div className="container mx-auto">
-          <div className="flex flex-wrap bg-white rounded-3xl shadow-xl my-[30px] overflow-hidden">
-            <div className="w-full lg:w-6/12 p-8">
-              <div className="max-w-2xl mx-auto">
-                <h2 className="text-3xl font-bold text-center text-blue-700 mb-10">
-                  🩺 Appointment Form
-                </h2>
+      
+      {/* Main Content Wrapper */}
+      <div className="flex-grow pt-28 pb-12 px-4 sm:px-6 lg:px-8 flex items-center justify-center">
+        
+        <div className="bg-white rounded-[2rem] shadow-2xl max-w-6xl w-full overflow-hidden flex flex-col lg:flex-row border border-gray-100">
+          
+          {/* Form Section */}
+          <div className="w-full lg:w-7/12 p-8 sm:p-12">
+            <div className="mb-8">
+              <h2 className="text-3xl font-extrabold text-gray-800 mb-2">
+                Book an Appointment
+              </h2>
+              <p className="text-gray-500">Fill in the details below to schedule your visit.</p>
+            </div>
 
-                <form
-                  onSubmit={handleSubmit}
-                  className="grid grid-cols-1 md:grid-cols-2 gap-6"
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+              
+              <div className="flex flex-col col-span-1 md:col-span-2">
+                <label htmlFor="hospitalId" className={labelClass}>
+                  Select Hospital
+                </label>
+                <select
+                  id="hospitalId"
+                  name="hospitalId"
+                  value={formData.hospitalId}
+                  onChange={handleChange}
+                  className={inputClass}
+                  required
                 >
-                  <div className="flex flex-col">
-                    <label
-                      htmlFor="hospitalId"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
-                      Select Hospital (Admin Username)
-                    </label>
-                    <select
-                      id="hospitalId"
-                      name="hospitalId"
-                      value={formData.hospitalId}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      required
-                    >
-                      <option value="">Select a hospital</option>
-                      {hospitals.map((hospital) => (
-                        <option key={hospital._id} value={hospital._id}>
-                          {hospital.username}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col">
-                    <label
-                      htmlFor="preferredSlot"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
-                      Which slot do you prefer?
-                    </label>
-                    <select
-                      id="preferredSlot"
-                      name="preferredSlot"
-                      value={formData.preferredSlot}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      required
-                      disabled={!formData.hospitalId} // Disable if no hospital is selected
-                    >
-                      <option value="">
-                        {formData.hospitalId
-                          ? "Select a time slot"
-                          : "Please select a hospital first"}
-                      </option>
-                      {timeSlots.map((slot, index) => (
-                        <option key={index} value={slot}>
-                          {slot}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col">
-
-                    <label
-                      htmlFor="selectedDoctor"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
-                      Choose Doctor (Optional)
-                    </label>
-                    <select
-                      id="selectedDoctor"
-                      name="selectedDoctor"
-                      value={formData.selectedDoctor || ""}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      disabled={!formData.hospitalId}
-                    >
-                      <option value="">
-                        {doctors.length > 0
-                          ? "Select a doctor"
-                          : "No doctors available for this hospital"}
-                      </option>
-                      {doctors.map((doctor) => (
-                        <option key={doctor._id} value={doctor._id}>
-                          {doctor.fullName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex flex-col">
-                    <label htmlFor="appointmentDate" className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Date
-                    </label>
-                    <select
-                      id="appointmentDate"
-                      name="appointmentDate"
-                      value={formData.appointmentDate}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      required
-                    >
-                      {getAvailableDates().map((date) => (
-                        <option key={date.iso} value={date.iso}>
-                          {date.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {Object.keys(formData).map(
-                    (key) =>
-                      key !== "hospitalId" &&
-                      key !== "hospitalName" &&
-                      key !== "preferredSlot" &&
-                      key !== "selectedDoctor" && (
-                        <div key={key} className="flex flex-col">
-                          <label
-                            htmlFor={key}
-                            className="block text-sm font-medium text-gray-700 mb-2 capitalize"
-                          >
-                            {key.replace(/([A-Z])/g, " $1").trim()}
-                          </label>
-                          <input
-                            type={
-                              key === "email"
-                                ? "email"
-                                : key === "age"
-                                  ? "number"
-                                  : "text"
-                            }
-                            id={key}
-                            name={key}
-                            value={formData[key]}
-                            onChange={handleChange}
-                            placeholder={`Enter ${key
-                              .replace(/([A-Z])/g, " $1")
-                              .trim()}`}
-                            className="border border-solid border-gray-400 border-[2px] w-full px-4 py-3  rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none"
-                            required
-                          />
-                        </div>
-                      )
-                  )}
-
-                  <button
-                    type="submit"
-                    className="col-span-1 md:col-span-2 bg-blue-600 hover:bg-blue-700 transition duration-200 text-white font-semibold py-3 px-6 rounded-lg shadow-md mt-2"
-                  >
-                    Submit
-                  </button>
-                </form>
+                  <option value="">Select a hospital...</option>
+                  {hospitals.map((hospital) => (
+                    <option key={hospital._id} value={hospital._id}>
+                      {hospital.username}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
 
-            <div className="w-full lg:w-6/12 bg-blue-50 flex items-center justify-center p-8">
-              <div className="img max-w-md w-full" ref={container}></div>
-            </div>
+              <div className="flex flex-col">
+                <label htmlFor="appointmentDate" className={labelClass}>
+                  Select Date
+                </label>
+                <select
+                  id="appointmentDate"
+                  name="appointmentDate"
+                  value={formData.appointmentDate}
+                  onChange={handleChange}
+                  className={inputClass}
+                  required
+                >
+                  {getAvailableDates().map((date) => (
+                    <option key={date.iso} value={date.iso}>
+                      {date.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label htmlFor="preferredSlot" className={labelClass}>
+                  Preferred Slot
+                </label>
+                <select
+                  id="preferredSlot"
+                  name="preferredSlot"
+                  value={formData.preferredSlot}
+                  onChange={handleChange}
+                  className={inputClass}
+                  required
+                  disabled={!formData.hospitalId} 
+                >
+                  <option value="">
+                    {formData.hospitalId ? "Select a time slot" : "Select a hospital first"}
+                  </option>
+                  {timeSlots.map((slot, index) => (
+                    <option key={index} value={slot}>
+                      {slot}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col col-span-1 md:col-span-2">
+                <label htmlFor="selectedDoctor" className={labelClass}>
+                  Choose Doctor (Optional)
+                </label>
+                <select
+                  id="selectedDoctor"
+                  name="selectedDoctor"
+                  value={formData.selectedDoctor || ""}
+                  onChange={handleChange}
+                  className={inputClass}
+                  disabled={!formData.hospitalId}
+                >
+                  <option value="">
+                    {doctors.length > 0 ? "Any available doctor" : "No doctors available"}
+                  </option>
+                  {doctors.map((doctor) => (
+                    <option key={doctor._id} value={doctor._id}>
+                      {doctor.fullName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Dynamic Inputs */}
+              {Object.keys(formData).map(
+                (key) =>
+                  key !== "hospitalId" &&
+                  key !== "hospitalName" &&
+                  key !== "preferredSlot" &&
+                  key !== "selectedDoctor" &&
+                  key !== "appointmentDate" && ( // EXCLUDED duplicate date field here
+                    <div key={key} className={`flex flex-col ${key === 'address' || key === 'diagnosis' ? 'col-span-1 md:col-span-2' : ''}`}>
+                      <label htmlFor={key} className={`${labelClass} capitalize`}>
+                        {key.replace(/([A-Z])/g, " $1").trim()}
+                      </label>
+                      <input
+                        type={key === "email" ? "email" : key === "age" ? "number" : "text"}
+                        id={key}
+                        name={key}
+                        value={formData[key]}
+                        onChange={handleChange}
+                        placeholder={`Enter ${key.replace(/([A-Z])/g, " $1").toLowerCase()}`}
+                        className={inputClass}
+                        required={key !== "diagnosis"} // made diagnosis optional as an example, adjust if needed
+                      />
+                    </div>
+                  )
+              )}
+
+              <div className="col-span-1 md:col-span-2 mt-4">
+                <button
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 text-lg"
+                >
+                  Confirm Appointment
+                </button>
+              </div>
+            </form>
           </div>
+
+          {/* Lottie Animation Section */}
+          <div className="w-full lg:w-5/12 bg-blue-50 flex flex-col items-center justify-center p-8 border-l border-blue-100">
+             <div className="text-center mb-8 lg:mb-12">
+                <h3 className="text-2xl font-bold text-blue-800">Fast & Secure</h3>
+                <p className="text-blue-600/80 mt-2">Skip the queue by booking online.</p>
+             </div>
+            <div className="img max-w-sm w-full drop-shadow-xl" ref={container}></div>
+          </div>
+
         </div>
       </div>
       <Footer />
