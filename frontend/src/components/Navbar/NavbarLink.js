@@ -36,10 +36,9 @@ function NavbarLink() {
 
   const closeMenu = () => setIsOpen(false);
 
-  // --- REFINED UI CLASSES ---
   const navLinkClass = "nav-link text-base font-semibold text-gray-600 hover:text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50/50 transition-all duration-200";
-  const buttonClass = "px-6 py-2.5 text-base text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 font-semibold";
-  const logoutClass = "text-base text-red-500 hover:text-red-700 hover:bg-red-50 font-semibold px-4 py-2 rounded-lg transition-all duration-200";
+  const buttonClass = "px-6 py-2.5 text-base text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 font-semibold whitespace-nowrap";
+  const logoutClass = "text-base text-red-500 hover:text-red-700 hover:bg-red-50 font-semibold px-4 py-2 rounded-lg transition-all duration-200 whitespace-nowrap";
   
   const renderNavLinks = () => {
     if (userRole === 'admin') {
@@ -66,16 +65,19 @@ function NavbarLink() {
   return (
     <Navbar 
       expand="lg" 
-      className='fixed top-0 left-0 w-full z-50 bg-white/80 backdrop-blur-lg border-b border-gray-100 py-3 transition-all duration-300'
+      className='fixed top-0 left-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 py-3 transition-all duration-300 shadow-sm'
     >
-      <Container fluid className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between'>
+      {/* Replaced max-w-7xl with w-full and increased horizontal padding to push items to the edges */}
+      <Container fluid className='w-full px-4 sm:px-8 lg:px-12 flex items-center justify-between'>
         
+        {/* Left Side: Logo */}
         <Navbar.Brand className='mr-0 flex items-center p-0'>
           <Link to="/" className='flex items-center transition-opacity hover:opacity-80'>
-            <img id="logo-img" src={Logo} alt="Health-schedule" className='h-10 w-auto object-contain' />
+            <img id="logo-img" src={Logo} alt="Health-schedule" className='h-12 w-auto object-contain' />
           </Link>
         </Navbar.Brand>
 
+        {/* Mobile Menu Button */}
         <div className='lg:hidden'>
           <button 
             onClick={toggleMenu} 
@@ -86,11 +88,13 @@ function NavbarLink() {
           </button>
         </div>
         
+        {/* Right Side: Links */}
         <Navbar.Collapse 
           id="basic-navbar-nav" 
           className={`lg:flex lg:items-center ${isOpen ? 'block' : 'hidden'} w-full lg:w-auto absolute lg:relative top-full left-0 bg-white lg:bg-transparent shadow-lg lg:shadow-none p-4 lg:p-0 border-b lg:border-none border-gray-100`}
         >
-          <Nav className='flex flex-col lg:flex-row items-center gap-2 lg:gap-4 w-full justify-end'>
+          {/* Added ml-auto to push everything to the right */}
+          <Nav className='flex flex-col lg:flex-row items-center gap-2 lg:gap-6 w-full lg:w-auto ml-auto justify-end'>
             <Link to="/" className={navLinkClass} onClick={closeMenu}>Home</Link>
             <Link to="/hospital" className={navLinkClass} onClick={closeMenu}>Hospitals List</Link>
             <Link to="/opdForm" className={navLinkClass} onClick={closeMenu}>Book Appointment</Link>
