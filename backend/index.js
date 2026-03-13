@@ -18,7 +18,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "http://localhost:3001", // local frontend
+      "http://localhost:3000", // local frontend
       "https://health-scheduling.vercel.app", // deployed frontend
     ],
     methods: ["GET", "POST", "PUT", "DELETE"],
