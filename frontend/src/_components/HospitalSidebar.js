@@ -344,32 +344,9 @@ export function HospitalSidebar() {
             overflow: "hidden",
           }}
         >
-          {/* Brand */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 6px 20px", borderBottom: "1px solid #F1F5F9" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-              <div
-                style={{
-                  width: 36, height: 36, borderRadius: 11, flexShrink: 0,
-                  background: "linear-gradient(135deg,#6366F1 0%,#0EA5E9 100%)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
-                }}
-              >
-                <Heart size={18} color="#fff" />
-              </div>
-              {sidebarOpen && (
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="brand-text"
-                  style={{ minWidth: 0 }}
-                >
-                  <p style={{ fontWeight: 800, color: "#1E293B", fontSize: 14, whiteSpace: "nowrap" }}>Health Schedule</p>
-                  <p style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Hospital Admin</p>
-                </motion.div>
-              )}
-            </div>
-            <button className="toggle-btn" onClick={() => setSidebarOpen((v) => !v)} style={{ flexShrink: 0 }}>
+          {/* Collapse toggle */}
+          <div style={{ display: "flex", justifyContent: sidebarOpen ? "flex-end" : "center", paddingBottom: 12, borderBottom: "1px solid #F1F5F9", marginBottom: 4 }}>
+            <button className="toggle-btn" onClick={() => setSidebarOpen((v) => !v)}>
               <ChevronRight
                 size={14}
                 style={{ transform: sidebarOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s" }}
