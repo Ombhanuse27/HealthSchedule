@@ -12,29 +12,25 @@ import HospitalDetails from "./components/Hospital/HospitalDetails";
 import './App.css';
 import DoctorSidebar from "./_components/DoctorSidebar";
 import DoctorInfo from "./components/Doctorsidebar/DoctorInfo";
-
 import DoctorSearchTable from "./components/DoctorSearchTable";
 import AdminDashboard from "./components/HospitalAdmin/AdminDashboard";
 import TeleConsultPage from "./components/TeleConsultPage";
 
-
 function App() {
   return (
     <Router>
-
       <div className="h-screen w-screen overflow-hidden bg-gray-100 flex flex-col">
-        
-        {/* Navbar sits at the top */}
-        <div className="flex-shrink-0 z-50">
-          <NavbarLink />
-        </div>
-        <div className="flex-1 overflow-y-auto overflow-x-hidden relative">
+        {/* Navbar — NavbarLink is position:fixed internally, so we render it
+            outside the flex flow and compensate with pt-[72px] below */}
+        <NavbarLink />
+
+        {/* pt-[72px] = navbar height (py-3 + h-12 logo). Change if navbar height changes. */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden relative pt-[72px]">
           <Routes>
             <Route path="/" element={<Landingpage />} />
             <Route path="/hospital" element={<Hospital />} />
             <Route path="/hospitalsidebar/*" element={<Hospitalsidebar />} /> {/* Added /* for nested routes */}
             <Route path="/doctorsidebar" element={<DoctorSidebar />} />
-          
             <Route path="/opdForm" element={<OpdForm />} />
             <Route path="/hospital/:hospitalId" element={<HospitalDetails />} />
             <Route path="/doctorInfo" element={<DoctorInfo />} />

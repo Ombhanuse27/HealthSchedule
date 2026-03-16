@@ -65,9 +65,13 @@ export function HospitalSidebar() {
       style={{
         fontFamily: "'Plus Jakarta Sans', 'DM Sans', sans-serif",
         background: "#F0F4FF",
-        minHeight: "100vh",
+        // 72px = navbar height (matches pt-[72px] in App.js).
+        // height:100% won't resolve on a flex-1 parent without explicit height,
+        // so calc is the reliable fix.
+        height: "calc(100vh - 72px)",
         display: "flex",
         flexDirection: "column",
+        overflow: "hidden",
       }}
     >
       <style>{`
@@ -321,7 +325,7 @@ export function HospitalSidebar() {
       </AnimatePresence>
 
       {/* ── Desktop Layout ── */}
-      <div style={{ display: "flex", flex: 1, minHeight: "calc(100vh - 0px)" }} className="desktop-sidebar-container">
+      <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }} className="desktop-sidebar-container">
 
         {/* Sidebar */}
         <div
