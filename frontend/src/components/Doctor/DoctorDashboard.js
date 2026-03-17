@@ -1,774 +1,489 @@
 import React, { useState, useEffect } from "react";
-// ✅ NEW: Import the speech recognition hook and 'regenerator-runtime' for it to work
 import "regenerator-runtime/runtime";
-import SpeechRecognition, {
-  useSpeechRecognition,
-} from "react-speech-recognition";
-
-import { getDoctorsData,getPrescriptions } from "../../api/doctorApi.js";
-import { savePrescriptionPdf,getDoctorOpdRecords } from "../../api/opdApi.js";
-import { sendPrescriptionEmail } from "../../api/communicationApi.js";
-
-
-// ⛔️ jsPDF is no longer needed
-import { generateTeleconsultLink } from "../../api/communicationApi.js";
-import { sendTeleconsultEmail } from "../../api/communicationApi.js";
-
-// ✅ NEW: Import html2pdf.js and your new template
+import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
+import { getDoctorsData, getPrescriptions } from "../../api/doctorApi.js";
+import { savePrescriptionPdf, getDoctorOpdRecords } from "../../api/opdApi.js";
+import { sendPrescriptionEmail, generateTeleconsultLink, sendTeleconsultEmail } from "../../api/communicationApi.js";
 import html2pdf from "html2pdf.js";
-import PrescriptionTemplate from "./PrescriptionTemplate.js"; // Adjust path if needed
+import PrescriptionTemplate from "./PrescriptionTemplate.js";
+import {
+  User, Calendar, Clock, FileText, Edit3, Mail, Video, Copy,
+  Plus, Search, Filter, Mic, MicOff, X, CheckCircle2, Upload,
+  Activity, Stethoscope, RefreshCw, ChevronDown, Eye,
+} from "lucide-react";
 
-const DoctorDashboard = ({ children }) => {
+// ── Avatar palette ──
+const avatarPalette = [
+  ["#8B5CF6", "#F5F3FF"], ["#10B981", "#ECFDF5"],
+  ["#0EA5E9", "#F0F9FF"], ["#F59E0B", "#FFFBEB"],
+  ["#EF4444", "#FEF2F2"], ["#6366F1", "#EEF2FF"],
+];
+
+const ActionBtn = ({ onClick, color, bg, border, icon: Icon, label, disabled }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+      background: bg, color, border: `1.5px solid ${border}`,
+      cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
+      transition: "all 0.18s", whiteSpace: "nowrap",
+    }}
+    onMouseEnter={(e) => !disabled && (e.currentTarget.style.transform = "translateY(-1px)")}
+    onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+  >
+    <Icon size={13} />
+    {label}
+  </button>
+);
+
+const DoctorDashboard = () => {
   const [opdRecords, setOpdRecords] = useState([]);
   const [loggedInDoctor, setLoggedInDoctor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
-  const [prescription, setPrescription] = useState({
-    diagnosis: "",
-    medication: "",
-    advice: "",
-  });
-
-  // ✅ NEW: State for photo upload
-  const [uploadedPhoto, setUploadedPhoto] = useState(null); // File object
-  const [uploadedPhotoBase64, setUploadedPhotoBase64] = useState(null); // Base64 string
-  const [photoPreview, setPhotoPreview] = useState(null); // URL for <img> src
-
+  const [prescription, setPrescription] = useState({ diagnosis: "", medication: "", advice: "" });
+  const [uploadedPhoto, setUploadedPhoto] = useState(null);
+  const [uploadedPhotoBase64, setUploadedPhotoBase64] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
   const [targetField, setTargetField] = useState(null);
+  const [saving, setSaving] = useState(false);
   const token = localStorage.getItem("token");
 
-  const {
-    transcript,
-    listening,
-    resetTranscript,
-    browserSupportsSpeechRecognition,
-  } = useSpeechRecognition();
+  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
   useEffect(() => {
-    if (targetField) {
-      setPrescription((prev) => ({
-        ...prev,
-        [targetField]: transcript,
-      }));
-    }
+    if (targetField) setPrescription((prev) => ({ ...prev, [targetField]: transcript }));
   }, [transcript, targetField]);
 
-  // Fetch and process data on component mount
   useEffect(() => {
-    const fetchInitialData = async () => {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
+    const fetchData = async () => {
+      if (!token) { setLoading(false); return; }
       setLoading(true);
       try {
-        const [opdResponse, doctors, prescriptionsResponse] = await Promise.all([
-          getDoctorOpdRecords(token),
-          getDoctorsData(token),
-          getPrescriptions(token),
-        ]);
-        const opdData = opdResponse.data;
-        const prescriptions = prescriptionsResponse.data;
+        const [opdRes, doctors, presRes] = await Promise.all([getDoctorOpdRecords(token), getDoctorsData(token), getPrescriptions(token)]);
         const username = localStorage.getItem("username");
-        const currentDoctor = doctors.find((doc) => doc.username === username);
-        if (!currentDoctor) {
-          alert("Could not identify the logged-in doctor.");
-          setLoading(false);
-          return;
-        }
+        const currentDoctor = doctors.find((d) => d.username === username);
+        if (!currentDoctor) { alert("Could not identify logged-in doctor."); setLoading(false); return; }
         setLoggedInDoctor(currentDoctor);
-
-        const assignedRecords = opdData.filter((record) => {
-          const assignedDoctorId =
-            record.assignedDoctor?.$oid || record.assignedDoctor;
-          const loggedInDoctorId = currentDoctor._id?.$oid || currentDoctor._id;
-          return assignedDoctorId === loggedInDoctorId;
+        const assigned = opdRes.data.filter((r) => {
+          const aid = r.assignedDoctor?.$oid || r.assignedDoctor;
+          const did = currentDoctor._id?.$oid || currentDoctor._id;
+          return aid === did;
         });
-
-        // 🟢 Create a map of prescriptions for easy lookup
-        const prescriptionsMap = new Map(
-          prescriptions.map((p) => [p.appointmentId, p])
-        );
-
-        // 🟢 Enrich OPD records with existing prescription data
-        const enrichedRecords = assignedRecords.map((record) => {
-          const existingPrescription = prescriptionsMap.get(record._id);
-          if (existingPrescription) {
-            return {
-              ...record,
-              // ✅ MODIFIED: These fields will now be populated from the (fixed) API
-              diagnosis: existingPrescription.diagnosis,
-              medication: existingPrescription.medication,
-              advice: existingPrescription.advice,
-              prescriptionPdf: { // Note: This key remains, but it now holds PDF OR image data
-                data: existingPrescription.pdfBase64, // This is just a base64 string
-                contentType: existingPrescription.contentType, // This is new
-              },
-            };
-          }
-          return record;
-        });
-        setOpdRecords(enrichedRecords);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        alert("An error occurred while fetching data.");
+        const presMap = new Map(presRes.data.map((p) => [p.appointmentId, p]));
+        setOpdRecords(assigned.map((r) => {
+          const ep = presMap.get(r._id);
+          return ep ? { ...r, diagnosis: ep.diagnosis, medication: ep.medication, advice: ep.advice, prescriptionPdf: { data: ep.pdfBase64, contentType: ep.contentType } } : r;
+        }));
+      } catch (err) {
+        console.error(err);
+        alert("Error fetching data.");
       } finally {
         setLoading(false);
       }
     };
-    fetchInitialData();
+    fetchData();
   }, [token]);
 
-  const startListening = (field) => {
-    // ✅ NEW: If user starts speaking, clear any uploaded photo
-    if (uploadedPhoto) {
-      clearPhotoUpload();
-    }
-    setTargetField(field);
-    resetTranscript();
-    SpeechRecognition.startListening({ continuous: true });
-  };
+  const clearPhoto = () => { if (photoPreview) URL.revokeObjectURL(photoPreview); setUploadedPhoto(null); setUploadedPhotoBase64(null); setPhotoPreview(null); };
+  const stopListening = () => { SpeechRecognition.stopListening(); setTargetField(null); };
+  const startListening = (field) => { if (uploadedPhoto) clearPhoto(); setTargetField(field); resetTranscript(); SpeechRecognition.startListening({ continuous: true }); };
 
-  const stopListening = () => {
-    SpeechRecognition.stopListening();
-    setTargetField(null);
-  };
-
-  // ✅ NEW: Helper to clear photo state
-  const clearPhotoUpload = () => {
-    if (photoPreview) {
-      URL.revokeObjectURL(photoPreview);
-    }
-    setUploadedPhoto(null);
-    setUploadedPhotoBase64(null);
-    setPhotoPreview(null);
-  };
-
-  // ✅ MODIFIED: When opening modal, also stop listening and clear photo
-  const handleOpenPrescriptionForm = (record) => {
+  const openModal = (record, edit = false) => {
     setSelectedRecord(record);
-    // Reset form for a new prescription
-    setPrescription({ diagnosis: "", medication: "", advice: "" });
-    clearPhotoUpload(); // Clear photo state
+    setPrescription(edit ? { diagnosis: record.diagnosis || "", medication: record.medication || "", advice: record.advice || "" } : { diagnosis: "", medication: "", advice: "" });
+    clearPhoto(); stopListening(); resetTranscript();
     setShowPrescriptionModal(true);
-    stopListening();
-    resetTranscript();
   };
+  const closeModal = () => { setShowPrescriptionModal(false); stopListening(); resetTranscript(); clearPhoto(); };
 
-  // ✅ MODIFIED: When opening modal, also stop listening and clear photo
-  const handleEditPrescription = (record) => {
-    setSelectedRecord(record);
-    // Pre-fill form with existing prescription data
-    setPrescription({
-      diagnosis: record.diagnosis || "",
-      medication: record.medication || "",
-      advice: record.advice || "",
-    });
-    clearPhotoUpload(); // Clear photo state
-    setShowPrescriptionModal(true);
-    stopListening();
-    resetTranscript();
-  };
-
-  // ✅ NEW: Centralized function to close modal
-  const closeModal = () => {
-    setShowPrescriptionModal(false);
-    stopListening();
-    resetTranscript();
-    clearPhotoUpload(); // Also clear photo on close
-  };
-
-  // ✅ NEW: Handle file input change
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (file && file.type.startsWith("image/")) {
-      setUploadedPhoto(file);
-
-      // Create preview
-      const previewUrl = URL.createObjectURL(file);
-      setPhotoPreview(previewUrl);
-
-      // Clear text fields
-      setPrescription({ diagnosis: "", medication: "", advice: "" });
-
-      // Convert to base64
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onloadend = () => {
-        // Remove the data URL prefix (e.g., "data:image/jpeg;base64,")
-        const base64String = reader.result.split(",")[1];
-        setUploadedPhotoBase64(base64String);
-      };
-    } else {
-      alert("Please upload a valid image file.");
-      clearPhotoUpload();
-    }
+    if (!file?.type.startsWith("image/")) { alert("Please upload a valid image."); clearPhoto(); return; }
+    setUploadedPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    setPrescription({ diagnosis: "", medication: "", advice: "" });
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onloadend = () => setUploadedPhotoBase64(reader.result.split(",")[1]);
   };
 
-  // ✅ NEW: Handle text input change (to clear photo)
-  const handleTextChange = (field, value) => {
-    if (uploadedPhoto) {
-      clearPhotoUpload();
-    }
-    setPrescription({ ...prescription, [field]: value });
-  };
+  const handleTextChange = (field, value) => { if (uploadedPhoto) clearPhoto(); setPrescription({ ...prescription, [field]: value }); };
 
-  // ⛔️ OLD PDF FUNCTION REMOVED
-  // const generatePdfBase64 = (doctor, record, prescrData) => { ... }
-
-  // ✅ NEW: This function replaces the old jsPDF one
   const generatePdfBase64 = async () => {
-    // Get the HTML element that we want to convert
-    const element = document.getElementById("pdf-template-to-export");
-    if (!element) {
-      alert("Error: Could not find prescription template element.");
-      return null;
-    }
-
-    const opt = {
-      margin: 0, // No margins
-      filename: "prescription.pdf",
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: {
-        scale: 2, // Higher scale for better quality
-        useCORS: true, // Needed for external images (like your logo)
-      },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-    };
-
-    // This generates the base64 data URI string
-    const dataUri = await html2pdf()
-      .from(element)
-      .set(opt)
-      .output("datauristring");
-
-    // We only want the base64 part, after the comma
+    const el = document.getElementById("pdf-template-to-export");
+    if (!el) return null;
+    const dataUri = await html2pdf().from(el).set({ margin: 0, image: { type: "jpeg", quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: "mm", format: "a4", orientation: "portrait" } }).output("datauristring");
     return dataUri.split(",")[1];
   };
 
-  // ✅ MAJORLY MODIFIED: To handle both PDF and Photo saving
-  const handleSavePrescription = async () => { // 🟢 Made async
+  const handleSave = async () => {
     if (!selectedRecord) return;
-    if (listening) {
-      stopListening();
-    }
-
+    if (listening) stopListening();
+    setSaving(true);
     let base64Data, contentType, diagnosis, medication, advice;
-
     if (uploadedPhoto && uploadedPhotoBase64) {
-      // --- Save Photo Logic ---
-      base64Data = uploadedPhotoBase64;
-      contentType = uploadedPhoto.type; // e.g., "image/jpeg"
-      diagnosis = ""; // Save empty fields for photo uploads
-      medication = "";
-      advice = "";
+      base64Data = uploadedPhotoBase64; contentType = uploadedPhoto.type;
+      diagnosis = ""; medication = ""; advice = "";
     } else {
-      // --- Save PDF Logic ---
-      
-      // 🟢 MODIFIED: This is now an async call
       base64Data = await generatePdfBase64();
-      
-      if (!base64Data) {
-        alert("Failed to generate PDF. Aborting save.");
-        return; // Stop if PDF generation failed
-      }
-      
+      if (!base64Data) { setSaving(false); return; }
       contentType = "application/pdf";
-      diagnosis = prescription.diagnosis;
-      medication = prescription.medication;
-      advice = prescription.advice;
+      diagnosis = prescription.diagnosis; medication = prescription.medication; advice = prescription.advice;
     }
-
     try {
-      await savePrescriptionPdf(
-        token,
-        selectedRecord._id,
-        base64Data,
-        contentType, // Pass new field
-        diagnosis,
-        medication,
-        advice
-      );
-      alert("Prescription saved successfully.");
-
-      // 🟢 Update the record in the state to immediately reflect the change
-      setOpdRecords((prevRecords) =>
-        prevRecords.map((rec) =>
-          rec._id === selectedRecord._id
-            ? {
-                ...rec,
-                diagnosis, // Save new/updated fields
-                medication,
-                advice,
-                prescriptionPdf: { // This object now holds either PDF or image
-                  data: base64Data,
-                  contentType: contentType,
-                },
-              }
-            : rec
-        )
-      );
-      closeModal(); // Use the centralized close function
-    } catch (error) {
-      console.error("Error saving prescription:", error);
-      alert("Failed to save the prescription.");
-    }
+      await savePrescriptionPdf(token, selectedRecord._id, base64Data, contentType, diagnosis, medication, advice);
+      setOpdRecords((prev) => prev.map((r) => r._id === selectedRecord._id ? { ...r, diagnosis, medication, advice, prescriptionPdf: { data: base64Data, contentType } } : r));
+      closeModal();
+    } catch { alert("Failed to save prescription."); }
+    finally { setSaving(false); }
   };
 
-  // ✅ MODIFIED: To handle sending emails with PDF or Images
   const sendEmail = async (recordId) => {
-    const record = opdRecords.find((r) => r._id === recordId);
-    if (!record?.email) {
-      alert("Patient email address not found.");
-      return;
-    }
-    if (!record.prescriptionPdf?.data) {
-      alert("No prescription found to send.");
-      return;
-    }
-    if (
-      !window.confirm(
-        `Are you sure you want to email the prescription to ${record.fullName}?`
-      )
-    )
-      return;
-
-    // --- Prepare email data ---
-    const base64Data = record.prescriptionPdf.data;
-    const contentType = record.prescriptionPdf.contentType || "application/pdf";
-    const filename = contentType.includes("pdf")
-      ? "prescription.pdf"
-      : `prescription.${contentType.split("/")[1] || "jpg"}`; // e.g., "prescription.jpg"
-
+    const r = opdRecords.find((rec) => rec._id === recordId);
+    if (!r?.email) { alert("Patient email not found."); return; }
+    if (!r.prescriptionPdf?.data) { alert("No prescription to send."); return; }
+    if (!window.confirm(`Email prescription to ${r.fullName}?`)) return;
+    const contentType = r.prescriptionPdf.contentType || "application/pdf";
     try {
-      await sendPrescriptionEmail({
-        email: record.email,
-        patientName: record.fullName,
-        base64Data, // Pass base64 data
-        contentType, // Pass content type
-        filename, // Pass filename
-      });
-      alert("Email sent successfully!");
-    } catch (err) {
-      console.error("Failed to send email:", err);
-      alert("Failed to send the email.");
-    }
+      await sendPrescriptionEmail({ email: r.email, patientName: r.fullName, base64Data: r.prescriptionPdf.data, contentType, filename: contentType.includes("pdf") ? "prescription.pdf" : `prescription.${contentType.split("/")[1] || "jpg"}` });
+      alert("Email sent!");
+    } catch { alert("Failed to send email."); }
   };
 
-  // ... uniqueDates and filteredRecords memos remain unchanged ...
-  const uniqueDates = React.useMemo(
-    () => [...new Set(opdRecords.map((record) => record.appointmentDate))],
-    [opdRecords]
-  );
-  // Filter and sort records based on the selected date
-  const filteredRecords = React.useMemo(() => {
-    const recordsToFilter = selectedDate
-      ? opdRecords.filter((record) => record.appointmentDate === selectedDate)
-      : opdRecords;
-    const parseTime = (timeStr) =>
-      new Date(`1970-01-01T${timeStr}`).getTime();
-    return recordsToFilter.sort(
-      (a, b) => parseTime(a.appointmentTime) - parseTime(b.appointmentTime)
-    );
-  }, [opdRecords, selectedDate]);
+  const viewPrescription = (record) => {
+    const { data, contentType = "application/pdf" } = record.prescriptionPdf;
+    const win = window.open();
+    win.document.write(contentType.includes("pdf")
+      ? `<iframe src="data:application/pdf;base64,${data}" style="border:0;width:100%;height:100vh;"></iframe>`
+      : `<img src="data:${contentType};base64,${data}" style="max-width:100%;" />`);
+  };
 
+  const uniqueDates = React.useMemo(() => [...new Set(opdRecords.map((r) => r.appointmentDate))], [opdRecords]);
+
+  const filteredRecords = React.useMemo(() => {
+    let records = selectedDate ? opdRecords.filter((r) => r.appointmentDate === selectedDate) : opdRecords;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      records = records.filter((r) => r.fullName?.toLowerCase().includes(q) || r.symptoms?.toLowerCase().includes(q));
+    }
+    return records.sort((a, b) => new Date(`1970-01-01T${a.appointmentTime}`) - new Date(`1970-01-01T${b.appointmentTime}`));
+  }, [opdRecords, selectedDate, searchQuery]);
+
+  const todayCount = opdRecords.filter((r) => r.appointmentDate === new Date().toLocaleDateString("en-CA")).length;
+  const withPrescription = opdRecords.filter((r) => r.prescriptionPdf?.data).length;
 
   return (
-    <div className="p-4 md:p-8 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold mb-6 text-gray-800 text-center">
-          Doctor's Dashboard
-        </h1>
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="date-select"
-              className="font-semibold text-gray-700"
-            >
-              Filter by Date:
-            </label>
+    <div style={{ fontFamily: "'Plus Jakarta Sans', 'DM Sans', sans-serif", background: "#FAF5FF", minHeight: "100%", padding: "28px 24px 80px" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+        .fade-up { animation: fadeUp 0.4s ease both; }
+        .fade-up-2 { animation: fadeUp 0.4s 0.07s ease both; }
+        .fade-up-3 { animation: fadeUp 0.4s 0.14s ease both; }
+        .row-hover { transition: background 0.15s; }
+        .row-hover:hover { background: linear-gradient(90deg,#F5F3FF 0%,#FAF5FF 100%) !important; }
+        .custom-select { appearance:none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238B5CF6' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; padding-right:36px; }
+        .input-focus:focus { border-color:#8B5CF6 !important; box-shadow: 0 0 0 3px rgba(139,92,246,0.1); outline:none; }
+        @keyframes spin { to{transform:rotate(360deg)} }
+        .spin { animation: spin 0.7s linear infinite; }
+        .modal-enter { animation: fadeUp 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+        .badge { display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700; }
+        .stat-card { transition: all 0.2s; }
+        .stat-card:hover { transform:translateY(-2px); }
+      `}</style>
+
+      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+
+        {/* Header */}
+        <div className="fade-up" style={{ marginBottom: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ width: 6, height: 6, borderRadius: 99, background: "#8B5CF6" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#8B5CF6", textTransform: "uppercase", letterSpacing: "0.1em" }}>Doctor Portal</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+            <div>
+              <h1 style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, margin: 0, background: "linear-gradient(135deg,#7C3AED 0%,#6366F1 50%,#0EA5E9 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                My Patients
+              </h1>
+              <p style={{ color: "#94A3B8", fontSize: 13, fontWeight: 500, marginTop: 6 }}>
+                {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+              </p>
+            </div>
+            <button onClick={() => window.location.reload()} style={{ width: 38, height: 38, borderRadius: 10, background: "#fff", border: "1.5px solid #EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#8B5CF6" }}>
+              <RefreshCw size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Stat Cards */}
+        <div className="fade-up-2" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 14, marginBottom: 24 }}>
+          {[
+            { label: "Total Assigned", value: opdRecords.length, color: "#8B5CF6", bg: "#FAF5FF", border: "#EDE9FE", icon: User },
+            { label: "Today", value: todayCount, color: "#0EA5E9", bg: "#F0F9FF", border: "#BAE6FD", icon: Calendar },
+            { label: "With Prescription", value: withPrescription, color: "#10B981", bg: "#ECFDF5", border: "#A7F3D0", icon: FileText },
+            { label: "Pending Rx", value: opdRecords.length - withPrescription, color: "#F59E0B", bg: "#FFFBEB", border: "#FDE68A", icon: Clock },
+          ].map((s) => (
+            <div key={s.label} className="stat-card" style={{ background: s.bg, border: `1.5px solid ${s.border}`, borderRadius: 16, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: `${s.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <s.icon size={18} style={{ color: s.color }} />
+              </div>
+              <div>
+                <p style={{ fontSize: 10, fontWeight: 700, color: s.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</p>
+                <p style={{ fontSize: 22, fontWeight: 800, color: "#1E293B", lineHeight: 1.1 }}>{s.value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Control Bar */}
+        <div className="fade-up-3" style={{ background: "rgba(255,255,255,0.9)", backdropFilter: "blur(16px)", border: "1px solid rgba(139,92,246,0.12)", borderRadius: 18, padding: "14px 18px", marginBottom: 20, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", boxShadow: "0 4px 20px rgba(139,92,246,0.07)" }}>
+          <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+            <Search size={15} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#C4B5FD" }} />
+            <input
+              className="input-focus"
+              placeholder="Search patient or symptoms…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ width: "100%", paddingLeft: 36, paddingRight: 14, paddingTop: 10, paddingBottom: 10, borderRadius: 12, background: "#FAF5FF", border: "1.5px solid #EDE9FE", fontSize: 13, fontWeight: 500, color: "#1E293B" }}
+            />
+          </div>
+          <div style={{ position: "relative" }}>
+            <Calendar size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#C4B5FD", pointerEvents: "none" }} />
             <select
-              id="date-select"
+              className="custom-select input-focus"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500"
+              style={{ paddingLeft: 34, paddingRight: 36, paddingTop: 10, paddingBottom: 10, borderRadius: 12, background: "#FAF5FF", border: "1.5px solid #EDE9FE", fontSize: 13, fontWeight: 600, color: "#1E293B", minWidth: 180 }}
             >
-              <option value="" className="text-black">
-                All Dates
-              </option>
-              {uniqueDates.map((date) => (
-                <option key={date} value={date}>
-                  {new Date(date).toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
-                </option>
+              <option value="">All Dates</option>
+              {uniqueDates.map((d) => (
+                <option key={d} value={d}>{new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</option>
               ))}
             </select>
           </div>
         </div>
+
+        {/* Table */}
         {loading ? (
-          <p className="text-center text-gray-500">Loading appointments...</p>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: 16 }}>
+            <div className="spin" style={{ width: 40, height: 40, borderRadius: "50%", border: "3px solid #EDE9FE", borderTopColor: "#8B5CF6" }} />
+            <p style={{ color: "#8B5CF6", fontWeight: 700 }}>Loading appointments…</p>
+          </div>
+        ) : filteredRecords.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "64px 0", background: "#fff", borderRadius: 20, border: "1.5px dashed #DDD6FE" }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: "#F5F3FF", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <Stethoscope size={26} color="#C4B5FD" />
+            </div>
+            <p style={{ fontWeight: 700, color: "#64748B", fontSize: 15 }}>No appointments found</p>
+            <p style={{ color: "#94A3B8", fontSize: 13, marginTop: 4 }}>Try adjusting your filters</p>
+          </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="p-4 font-semibold text-gray-600">Patient</th>
-                  <th className="p-4 font-semibold text-gray-600">Symptoms</th>
-                  <th className="p-4 font-semibold text-gray-600">
-                    Appointment
-                  </th>
-                  <th className="p-4 font-semibold text-gray-600">Actions</th>
+          <div style={{ background: "#fff", borderRadius: 20, overflow: "hidden", border: "1px solid #EDE9FE", boxShadow: "0 2px 12px rgba(139,92,246,0.07)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1.5px solid #F5F3FF" }}>
+                  {["Patient", "Symptoms", "Appointment", "Actions"].map((h) => (
+                    <th key={h} style={{ padding: "14px 20px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.07em" }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords.length > 0 ? (
-                  filteredRecords.map((record) => (
-                    <tr
-                      key={record._id}
-                      className="border-t border-gray-200 hover:bg-gray-50"
-                    >
-                      <td className="p-4">
-                        <div className="font-medium text-gray-900">
-                          {record.fullName}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          Age: {record.age}
-                        </div>
-                      </td>
-                      <td className="p-4 text-gray-700">{record.symptoms}</td>
-                      <td className="p-4">
-                        <div className="text-gray-900">
-                          {record.appointmentDate}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {record.appointmentTime}
+                {filteredRecords.map((record) => {
+                  const [fg, bg] = avatarPalette[record.fullName?.charCodeAt(0) % avatarPalette.length] || avatarPalette[0];
+                  const hasPrescription = !!record.prescriptionPdf?.data;
+                  return (
+                    <tr key={record._id} className="row-hover" style={{ borderBottom: "1px solid #FAF5FF" }}>
+                      {/* Patient */}
+                      <td style={{ padding: "14px 20px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 10, background: bg, color: fg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+                            {record.fullName?.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p style={{ fontWeight: 700, fontSize: 13, color: "#1E293B" }}>{record.fullName}</p>
+                            <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 1 }}>Age {record.age}</p>
+                          </div>
                         </div>
                       </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          {record.prescriptionPdf?.data ? (
+                      {/* Symptoms */}
+                      <td style={{ padding: "14px 20px", maxWidth: 200 }}>
+                        <p style={{ fontSize: 13, color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={record.symptoms}>
+                          {record.symptoms || "—"}
+                        </p>
+                        {hasPrescription && (
+                          <span className="badge" style={{ background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", marginTop: 4 }}>
+                            <CheckCircle2 size={10} /> Rx Done
+                          </span>
+                        )}
+                      </td>
+                      {/* Appointment */}
+                      <td style={{ padding: "14px 20px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                          <Calendar size={12} color="#8B5CF6" />
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "#1E293B" }}>{record.appointmentDate}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <Clock size={12} color="#C4B5FD" />
+                          <span style={{ fontSize: 12, color: "#94A3B8" }}>{record.appointmentTime}</span>
+                        </div>
+                      </td>
+                      {/* Actions */}
+                      <td style={{ padding: "14px 20px" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {hasPrescription ? (
                             <>
-                              <button
-                                onClick={() => {
-                                  // ✅ MODIFIED: View button now handles images too
-                                  const contentType =
-                                    record.prescriptionPdf.contentType ||
-                                    "application/pdf";
-                                  const data = record.prescriptionPdf.data;
-                                  const win = window.open();
-                                  if (contentType.includes("pdf")) {
-                                    win.document.write(
-                                      `<iframe src="data:application/pdf;base64,${data}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`
-                                    );
-                                  } else {
-                                    win.document.write(
-                                      `<img src="data:${contentType};base64,${data}" style="max-width: 100%;" />`
-                                    );
-                                  }
-                                }}
-                                className="px-3 py-1 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition"
-                                title="View Prescription"
-                              >
-                                📄 View
-                              </button>
-                              <button
-                                onClick={() => handleEditPrescription(record)}
-                                className="px-3 py-1 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition"
-                                title="Edit Prescription"
-                              >
-                                ✏️ Edit
-                              </button>
-                              <button
-                                onClick={() => sendEmail(record._id)}
-                                className="px-3 py-1 text-sm font-medium text-white bg-yellow-500 rounded-md hover:bg-yellow-600 transition"
-                                title="Send Email"
-                              >
-                                📧 Send
-                              </button>
+                              <ActionBtn onClick={() => viewPrescription(record)} color="#4F46E5" bg="#EEF2FF" border="#C7D2FE" icon={Eye} label="View" />
+                              <ActionBtn onClick={() => openModal(record, true)} color="#0369A1" bg="#E0F2FE" border="#BAE6FD" icon={Edit3} label="Edit" />
+                              <ActionBtn onClick={() => sendEmail(record._id)} color="#B45309" bg="#FFFBEB" border="#FDE68A" icon={Mail} label="Email" />
                             </>
                           ) : (
-                            <button
-                              onClick={() =>
-                                handleOpenPrescriptionForm(record)
-                              }
-                              className="px-3 py-1 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition"
-                              title="Add Prescription"
-                            >
-                              ➕ Add Prescription
-                            </button>
+                            <ActionBtn onClick={() => openModal(record)} color="#059669" bg="#ECFDF5" border="#A7F3D0" icon={Plus} label="Add Rx" />
                           )}
-                          <button
+                          <ActionBtn
                             onClick={async () => {
-                              const confirmStart = window.confirm(
-                                `Are you sure you want to start a teleconsultation with ${record.fullName}?`
-                              );
-                              if (!confirmStart) return;
+                              if (!window.confirm(`Start teleconsultation with ${record.fullName}?`)) return;
                               try {
-                                const { data } = await generateTeleconsultLink(
-                                  record._id
-                                );
-                                const meetLink = data.meetLink;
-                                await sendTeleconsultEmail({
-                                  email: record.email,
-                                  patientName: record.fullName,
-                                  meetLink,
-                                });
-                                alert(
-                                  `Teleconsultation link sent to ${record.fullName}!`
-                                );
-                                // This automatically opens the teleconsult room for the doctor.
-                                window.open(meetLink, "_blank");
-                                // ✅ ADD THIS: Update the state to store the new link against the record
-                                setOpdRecords((prevRecords) =>
-                                  prevRecords.map((rec) =>
-                                    rec._id === record._id
-                                      ? { ...rec, meetLink: meetLink } // Add/update the meetLink for this record
-                                      : rec
-                                  )
-                                );
-                              } catch (err) {
-                                console.error(err);
-                                alert(
-                                  "Failed to send teleconsultation link."
-                                );
-                              }
+                                const { data } = await generateTeleconsultLink(record._id);
+                                await sendTeleconsultEmail({ email: record.email, patientName: record.fullName, meetLink: data.meetLink });
+                                window.open(data.meetLink, "_blank");
+                                setOpdRecords((prev) => prev.map((r) => r._id === record._id ? { ...r, meetLink: data.meetLink } : r));
+                              } catch { alert("Failed to start teleconsultation."); }
                             }}
-                            className="px-3 py-1 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 transition"
-                          >
-                            💻 Start Teleconsult
-                          </button>
-                          {/* ✅ ADD THIS NEW BUTTON */}
+                            color="#7C3AED" bg="#F5F3FF" border="#DDD6FE" icon={Video} label="Teleconsult"
+                          />
                           {record.meetLink && (
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(record.meetLink);
-                                alert("Link copied to clipboard!");
-                              }}
-                              className="px-3 py-1 text-sm font-medium text-white bg-gray-500 rounded-md hover:bg-gray-600 transition"
-                              title="Copy teleconsult link"
-                            >
-                              📋 Copy Link
-                            </button>
+                            <ActionBtn onClick={() => { navigator.clipboard.writeText(record.meetLink); alert("Link copied!"); }} color="#475569" bg="#F8FAFC" border="#E2E8F0" icon={Copy} label="Copy Link" />
                           )}
                         </div>
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan="4"
-                      className="text-center p-6 text-gray-500"
-                    >
-                      No records found for the selected date.
-                    </td>
-                  </tr>
-                )}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* 🟢 Improved Prescription Modal UI with Voice-to-Text & Photo Upload */}
+      {/* Prescription Modal */}
       {showPrescriptionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-          
-          {/* ✅ NEW: Add the hidden template here */}
-          {/* This is hidden off-screen. It's only used by html2pdf.js */}
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          {/* Hidden PDF template */}
           <div style={{ position: "absolute", left: "-9999px" }}>
-            <PrescriptionTemplate
-              id="pdf-template-to-export" // The ID our new function looks for
-              doctor={loggedInDoctor}
-              record={selectedRecord}
-              prescription={prescription}
-            />
+            <PrescriptionTemplate id="pdf-template-to-export" doctor={loggedInDoctor} record={selectedRecord} prescription={prescription} />
           </div>
 
-          <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-lg transform transition-all max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold mb-2 text-gray-800">
-              Prescription
-            </h2>
-            <p className="mb-6 text-gray-600">
-              For:{" "}
-              <span className="font-semibold">{selectedRecord?.fullName}</span>
-            </p>
-            
-            {!browserSupportsSpeechRecognition && (
-              <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-3 mb-4 rounded">
-                <p>Speech recognition is not supported in this browser.</p>
+          <div className="modal-enter" style={{ background: "#fff", borderRadius: 24, width: "100%", maxWidth: 500, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 32px 80px rgba(139,92,246,0.2)" }}>
+            {/* Modal Header */}
+            <div style={{ padding: "22px 28px 18px", background: "linear-gradient(135deg,#F5F3FF 0%,#EFF6FF 100%)", borderBottom: "1px solid #EDE9FE", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#EDE9FE", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <FileText size={18} color="#8B5CF6" />
+                </div>
+                <div>
+                  <p style={{ fontWeight: 800, fontSize: 16, color: "#1E293B" }}>Prescription</p>
+                  <p style={{ fontSize: 12, color: "#94A3B8" }}>For: {selectedRecord?.fullName}</p>
+                </div>
               </div>
-            )}
+              <button onClick={closeModal} style={{ width: 32, height: 32, borderRadius: 8, background: "#fff", border: "1.5px solid #EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <X size={15} color="#94A3B8" />
+              </button>
+            </div>
 
-            {/* ✅ NEW: Photo Upload Section */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Upload Photo (Optional)
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              {photoPreview && (
-                <div className="mt-4 relative">
-                  <img
-                    src={photoPreview}
-                    alt="Prescription preview"
-                    className="w-full h-auto max-h-60 object-contain rounded-md border border-gray-300"
-                  />
-                  <button
-                    onClick={clearPhotoUpload}
-                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold"
-                    title="Clear Photo"
-                  >
-                    &times;
-                  </button>
+            {/* Modal Body */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+              {!browserSupportsSpeechRecognition && (
+                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#B45309" }}>
+                  Speech recognition is not supported in this browser.
                 </div>
               )}
+
+              {/* Photo Upload */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 8 }}>
+                  Upload Photo (Optional)
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, border: "1.5px dashed #DDD6FE", background: "#FAF5FF", cursor: "pointer" }}>
+                  <Upload size={15} color="#8B5CF6" />
+                  <span style={{ fontSize: 13, color: "#8B5CF6", fontWeight: 600 }}>Choose image file</span>
+                  <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: "none" }} />
+                </label>
+                {photoPreview && (
+                  <div style={{ marginTop: 10, position: "relative" }}>
+                    <img src={photoPreview} alt="Preview" style={{ width: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 10, border: "1.5px solid #EDE9FE" }} />
+                    <button onClick={clearPhoto} style={{ position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>×</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+                <div style={{ flex: 1, height: 1, background: "#EDE9FE" }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>or type</span>
+                <div style={{ flex: 1, height: 1, background: "#EDE9FE" }} />
+              </div>
+
+              {/* Fields */}
+              {[
+                { key: "diagnosis", label: "Diagnosis", type: "input", placeholder: "e.g. Viral Fever" },
+                { key: "medication", label: "Medication (Rx)", type: "textarea", placeholder: "e.g. Paracetamol 500mg - twice daily" },
+                { key: "advice", label: "Advice", type: "textarea", placeholder: "e.g. Rest, drink fluids" },
+              ].map(({ key, label, type, placeholder }) => {
+                const isListening = listening && targetField === key;
+                return (
+                  <div key={key} style={{ marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>
+                      <button
+                        disabled={!!uploadedPhoto || !browserSupportsSpeechRecognition || (listening && targetField !== key)}
+                        onClick={() => isListening ? stopListening() : startListening(key)}
+                        style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${isListening ? "#FCA5A5" : "#DDD6FE"}`, background: isListening ? "#FEF2F2" : "#F5F3FF", color: isListening ? "#EF4444" : "#8B5CF6", fontSize: 11, fontWeight: 700, cursor: "pointer", opacity: (!!uploadedPhoto || (!browserSupportsSpeechRecognition)) ? 0.4 : 1 }}
+                      >
+                        {isListening ? <><MicOff size={11} /> Stop</> : <><Mic size={11} /> Speak</>}
+                      </button>
+                    </div>
+                    {type === "input" ? (
+                      <input
+                        className="input-focus"
+                        placeholder={placeholder}
+                        value={prescription[key]}
+                        disabled={!!uploadedPhoto}
+                        onChange={(e) => handleTextChange(key, e.target.value)}
+                        style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1.5px solid #EDE9FE", background: uploadedPhoto ? "#F8FAFC" : "#FAF5FF", fontSize: 13, fontWeight: 500, color: "#1E293B", boxSizing: "border-box" }}
+                      />
+                    ) : (
+                      <textarea
+                        className="input-focus"
+                        placeholder={placeholder}
+                        rows={3}
+                        value={prescription[key]}
+                        disabled={!!uploadedPhoto}
+                        onChange={(e) => handleTextChange(key, e.target.value)}
+                        style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1.5px solid #EDE9FE", background: uploadedPhoto ? "#F8FAFC" : "#FAF5FF", fontSize: 13, fontWeight: 500, color: "#1E293B", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
-            {/* ✅ NEW: Divider */}
-            <div className="flex items-center my-6">
-              <div className="flex-grow border-t border-gray-300"></div>
-              <span className="flex-shrink mx-4 text-gray-500 text-sm">
-                OR
-              </span>
-              <div className="flex-grow border-t border-gray-300"></div>
-            </div>
-
-            {/* ✅ MODIFIED: Form fields are disabled if a photo is uploaded */}
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Diagnosis
-                  </label>
-                  <button
-                    title="Record Diagnosis"
-                    disabled={
-                      !!uploadedPhoto || // Disable if photo exists
-                      !browserSupportsSpeechRecognition ||
-                      (listening && targetField !== "diagnosis")
-                    }
-                    onClick={() =>
-                      listening && targetField === "diagnosis"
-                        ? stopListening()
-                        : startListening("diagnosis")
-                    }
-                    className={`text-xl ${
-                      listening && targetField === "diagnosis"
-                        ? "text-red-500 animate-pulse"
-                        : "text-blue-500"
-                    } disabled:text-gray-300`}
-                  >
-                    {listening && targetField === "diagnosis" ? "⏹️" : "🎙️"}
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  placeholder="e.g., Viral Fever"
-                  className="w-full p-2 border border-gray-300 text-black rounded-md focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                  value={prescription.diagnosis}
-                  disabled={!!uploadedPhoto} // Disable if photo exists
-                  onChange={(e) =>
-                    handleTextChange("diagnosis", e.target.value)
-                  }
-                />
-              </div>
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Medication (Rx)
-                  </label>
-                  <button
-                    title="Record Medication"
-                    disabled={
-                      !!uploadedPhoto || // Disable if photo exists
-                      !browserSupportsSpeechRecognition ||
-                      (listening && targetField !== "medication")
-                    }
-                    onClick={() =>
-                      listening && targetField === "medication"
-                        ? stopListening()
-                        : startListening("medication")
-                    }
-                    className={`text-xl ${
-                      listening && targetField === "medication"
-                        ? "text-red-500 animate-pulse"
-                        : "text-blue-500"
-                    } disabled:text-gray-300`}
-                  >
-                    {listening && targetField === "medication" ? "⏹️" : "🎙️"}
-                  </button>
-                </div>
-                <textarea
-                  placeholder="e.g., Paracetamol 500mg - 1 tablet twice a day"
-                  rows="4"
-                  className="w-full p-2 border border-gray-300 text-black rounded-md focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                  value={prescription.medication}
-                  disabled={!!uploadedPhoto} // Disable if photo exists
-                  onChange={(e) =>
-                    handleTextChange("medication", e.target.value)
-                  }
-                />
-              </div>
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Advice
-                  </label>
-                  <button
-                    title="Record Advice"
-                    disabled={
-                      !!uploadedPhoto || // Disable if photo exists
-                      !browserSupportsSpeechRecognition ||
-                      (listening && targetField !== "advice")
-                    }
-                    onClick={() =>
-                      listening && targetField === "advice"
-                        ? stopListening()
-                        : startListening("advice")
-                    }
-                    className={`text-xl ${
-                      listening && targetField === "advice"
-                        ? "text-red-500 animate-pulse"
-                        : "text-blue-500"
-                    } disabled:text-gray-300`}
-                  >
-                    {listening && targetField === "advice" ? "⏹️" : "🎙️"}
-                  </button>
-                </div>
-                <textarea
-                  placeholder="e.g., Take complete rest, drink plenty of fluids"
-                  rows="3"
-                  className="w-full p-2 border border-gray-300 text-black rounded-md focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                  value={prescription.advice}
-                  disabled={!!uploadedPhoto} // Disable if photo exists
-                  onChange={(e) =>
-                    handleTextChange("advice", e.target.value)
-                  }
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-4 mt-8">
-              <button
-                className="px-6 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition"
-                onClick={closeModal} // ✅ MODIFIED: Use new close function
-              >
+            {/* Modal Footer */}
+            <div style={{ padding: "16px 28px", borderTop: "1px solid #F5F3FF", display: "flex", gap: 12, flexShrink: 0 }}>
+              <button onClick={closeModal} style={{ flex: 1, padding: "12px", borderRadius: 14, border: "1.5px solid #E2E8F0", background: "#fff", fontWeight: 700, fontSize: 13, color: "#64748B", cursor: "pointer" }}>
                 Cancel
               </button>
               <button
-                className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition"
-                onClick={handleSavePrescription}
+                onClick={handleSave}
+                disabled={saving}
+                style={{ flex: 1, padding: "12px", borderRadius: 14, background: "linear-gradient(135deg,#8B5CF6,#7C3AED)", color: "#fff", fontWeight: 800, fontSize: 13, border: "none", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 4px 14px rgba(139,92,246,0.3)" }}
               >
-                Save Prescription
+                {saving ? <><div className="spin" style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff" }} /> Saving…</> : <><CheckCircle2 size={15} /> Save Prescription</>}
               </button>
             </div>
           </div>
@@ -777,4 +492,5 @@ const DoctorDashboard = ({ children }) => {
     </div>
   );
 };
+
 export default DoctorDashboard;
