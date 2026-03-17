@@ -56,7 +56,7 @@ export function DoctorSidebar() {
       style={{
         fontFamily: "'Plus Jakarta Sans', 'DM Sans', sans-serif",
         background: "#FAF5FF",
-        height: "calc(100vh - 72px)",
+        height: "calc(100vh - 88px)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",

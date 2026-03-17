@@ -68,7 +68,7 @@ export function HospitalSidebar() {
         // 72px = navbar height (matches pt-[72px] in App.js).
         // height:100% won't resolve on a flex-1 parent without explicit height,
         // so calc is the reliable fix.
-        height: "calc(100vh - 72px)",
+        height: "calc(100vh - 88px)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",

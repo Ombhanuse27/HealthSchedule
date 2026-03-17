@@ -26,7 +26,7 @@ function NavbarLink() {
 
   const close = () => setIsOpen(false);
 
-  const linkCls = "flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-indigo-50 transition-all duration-150";
+  const linkCls = "flex items-center gap-1.5 text-base font-semibold text-slate-600 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-indigo-50 transition-all duration-150";
 
   const renderRoleLinks = () => {
     if (userRole === 'admin') return (
@@ -34,7 +34,7 @@ function NavbarLink() {
         <Link to="/hospitalsidebar" onClick={close} className={linkCls}>
           <LayoutDashboard size={15} /> Admin Dashboard
         </Link>
-        <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm font-semibold text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg transition-all">
+        <button onClick={handleLogout} className="flex items-center gap-1.5 text-base font-semibold text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg transition-all">
           <LogOut size={15} /> Logout
         </button>
       </>
@@ -44,7 +44,7 @@ function NavbarLink() {
         <Link to="/doctorsidebar" onClick={close} className={linkCls}>
           <Stethoscope size={15} /> Doctor Dashboard
         </Link>
-        <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm font-semibold text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg transition-all">
+        <button onClick={handleLogout} className="flex items-center gap-1.5 text-base font-semibold text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg transition-all">
           <LogOut size={15} /> Logout
         </button>
       </>
@@ -53,7 +53,7 @@ function NavbarLink() {
       <Link
         to="/login"
         onClick={close}
-        className="px-5 py-2 text-sm font-bold text-white rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all"
+        className="px-5 py-2 text-base font-bold text-white rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all"
         style={{ background: "linear-gradient(135deg,#6366F1,#0EA5E9)" }}
       >
         Login / Register
@@ -64,19 +64,19 @@ function NavbarLink() {
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 shadow-sm">
       <div className="w-full px-4 sm:px-8 lg:px-12">
-        <div className="flex items-center justify-between h-[72px]">
+        <div className="flex items-center justify-between h-[88px]">
 
           {/* Logo */}
           <Link to="/" onClick={close} className="flex items-center hover:opacity-80 transition-opacity shrink-0">
-            <img src={Logo} alt="Health-schedule" className="h-12 w-auto object-contain" />
+            <img src={Logo} alt="Health-schedule" className="h-16 w-auto object-contain" />
           </Link>
 
           {/* Desktop Links */}
-          <div className="hidden lg:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-2">
             <Link to="/" className={linkCls}>Home</Link>
             <Link to="/hospital" className={linkCls}>Hospitals List</Link>
             <Link to="/opdForm" className={linkCls}>Book Appointment</Link>
-            <div className="w-px h-5 bg-slate-200 mx-2" />
+            <div className="w-px h-6 bg-slate-200 mx-3" />
             {renderRoleLinks()}
           </div>
 
