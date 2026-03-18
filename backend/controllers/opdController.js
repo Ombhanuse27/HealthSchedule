@@ -8,10 +8,7 @@ const https = require("https");
 require("dotenv").config();
 
 let apiInstance = new brevo.TransactionalEmailsApi();
-apiInstance.setApiKey(
-  brevo.TransactionalEmailsApiApiKeys.apiKey,
-  process.env.BREVO_API_KEY
-);
+apiInstance.authentications["apiKey"].apiKey = process.env.BREVO_API_KEY;
 
 const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
 
@@ -249,6 +246,7 @@ exports.bookOpd = async (req, res) => {
       appointmentNumber: counter.seq,
       preferredSlot: `${startStr} - ${endStr}`,
       assignedDoctor: selectedDoctor,
+      selectedDoctor: selectedDoctor, 
     });
 
     await newOpdEntry.save();

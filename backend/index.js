@@ -4,6 +4,10 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const { ExpressPeerServer } = require("peer");
 dotenv.config({ path: "../.env" });
+
+console.log("BREVO KEY:", process.env.BREVO_API_KEY ? "Loaded ✅" : "MISSING ❌")
+// Paste this right before apiInstance.sendTransacEmail(...)
+
 const hospitalRoutes = require("./Routes/hospitalRoutes");
 const adminRoutes = require("./Routes/adminRoutes");
 const opdRoutes = require("./Routes/opdRoutes");
