@@ -5,7 +5,7 @@ import Footer from '../Footer/Footer';
 import { Heart, User, Lock, MapPin, ArrowRight, CheckCircle2, Building2 } from 'lucide-react';
 
 const Register = () => {
-  const [formData, setFormData] = useState({ username: "", password: "", address: "" });
+  const [formData, setFormData] = useState({ username: "", password: "", address: "", email: "" });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -25,7 +25,7 @@ const Register = () => {
     }
   };
 
-  const steps = ["Create username", "Set password", "Add address"];
+  const steps = ["Create username", "Enter Email","Set password", "Add address"];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex flex-col">
@@ -114,6 +114,24 @@ const Register = () => {
                     name="username"
                     placeholder="Choose a username"
                     value={formData.username}
+                    onChange={handleChange}
+                    required
+                    className="input-field w-full pl-10 pr-4 py-3 rounded-xl text-sm font-medium text-slate-700 placeholder:text-slate-300 outline-none transition-all"
+                    style={{ background: "#F0FDF9", border: "1.5px solid #D1FAE5" }}
+                  />
+                </div>
+              </div>
+
+              {/* Email */}
+              <div className="float-up-3">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Email</label>
+                <div className="relative">
+                  <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: "#6EE7B7" }} />
+                  <input
+                    type="email"
+                    name="email"
+                    placeholder="Enter your email address"
+                    value={formData.email}
                     onChange={handleChange}
                     required
                     className="input-field w-full pl-10 pr-4 py-3 rounded-xl text-sm font-medium text-slate-700 placeholder:text-slate-300 outline-none transition-all"

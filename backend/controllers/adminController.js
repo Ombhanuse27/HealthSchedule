@@ -18,13 +18,18 @@ exports.getCron = (req, res) => {
 // ======================
 exports.registerAdmin = async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, address, email } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const existingAdmin = await Admin.findOne({ username });
+    existingEmail = await Admin.findOne({ email });
+    if (existingEmail) {
+      return res.status(400).json({ message: "Email already in use" });
+    }
+
+    const existingAdmin = await Admin.findOne({ username});
     if (existingAdmin) {
       return res.status(400).json({ message: "Admin already exists" });
     }
@@ -34,9 +39,15 @@ exports.registerAdmin = async (req, res) => {
     const newAdmin = new Admin({
       username,
       password: hashedPassword,
+      address,
+      email
     });
 
+    newAdmin.hospitalId = newAdmin._id.toString(); // ✅ fix — assign before save
+
+
     await newAdmin.save();
+
 
     res.status(201).json({ message: "Admin registered successfully" });
   } catch (err) {

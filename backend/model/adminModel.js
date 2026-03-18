@@ -5,7 +5,7 @@ const AdminSchema = new mongoose.Schema({
   password: { type: String, required: true },
   opdForms: [{ type: mongoose.Schema.Types.ObjectId, ref: 'opdModel' }],
   hospitalImage: { type: String, default: "" },
-  hospitalId: { type: String},
+  hospitalId:{ type: String},
   hospitalName: { type: String },
   hospitalStartTime: { type: String},
   hospitalEndTime: { type: String },
