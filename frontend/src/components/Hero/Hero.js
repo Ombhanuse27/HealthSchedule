@@ -137,7 +137,7 @@ const Hero = () => {
               </h1>
 
               <p className="hero-text-3" style={{ fontSize:17, color:"#64748B", lineHeight:1.7, marginBottom:32, maxWidth:480, fontWeight:500 }}>
-                Book appointments at top hospitals, consult doctors online, and manage your health records — all in one place.
+                Book appointments at top hospitals in preferred slots, consult doctors online, and manage your health records — all in one place.
               </p>
 
               {/* Feature chips */}
